@@ -34,13 +34,14 @@
 namespace brpc {
 namespace policy {
 
-DEFINE_string(consul_agent_addr, "http://127.0.0.1:8500",
+DEFINE_string(consul_agent_addr, "http://127.0.0.1:2280",
               "The query string of request consul for discovering service.");
 DEFINE_string(consul_service_discovery_url,
-              "/v1/health/service/",
+              "/v1/lookup/name",
               "The url of consul for discovering service.");
-DEFINE_string(consul_url_parameter, "?stale&passing",
-              "The query string of request consul for discovering service.");
+DEFINE_string(consul_url_parameter, "",
+    "The query string of request consul for discovering service. "
+    "for example: `&addr-family=dual-stack&unique=v6`");
 DEFINE_int32(consul_connect_timeout_ms, 200,
              "Timeout for creating connections to consul in milliseconds");
 DEFINE_int32(consul_blocking_query_wait_secs, 60,
@@ -52,8 +53,8 @@ DEFINE_string(consul_file_naming_service_dir, "",
     "service name will be searched in this dir to use.");
 DEFINE_int32(consul_retry_interval_ms, 500,
              "Wait so many milliseconds before retry when error happens");
-
-constexpr char kConsulIndex[] = "X-Consul-Index";
+DEFINE_int32(consul_polling_interval_secs, 10,
+             "Wait so many seconds before polling consul again");
 
 std::string RapidjsonValueToString(const BUTIL_RAPIDJSON_NAMESPACE::Value& value) {
     BUTIL_RAPIDJSON_NAMESPACE::StringBuffer buffer;
@@ -90,16 +91,13 @@ int ConsulNamingService::GetServers(const char* service_name,
 
     if (_consul_url.empty()) {
         _consul_url.append(FLAGS_consul_service_discovery_url);
+        _consul_url.append("?name=");
         _consul_url.append(service_name);
         _consul_url.append(FLAGS_consul_url_parameter);
     }
 
     servers->clear();
     std::string consul_url(_consul_url);
-    if (!_consul_index.empty()) {
-        butil::string_appendf(&consul_url, "&index=%s&wait=%ds", _consul_index.c_str(),
-                              FLAGS_consul_blocking_query_wait_secs);
-    }
 
     Controller cntl;
     cntl.http_request().uri() = consul_url;
@@ -108,19 +106,6 @@ int ConsulNamingService::GetServers(const char* service_name,
         LOG(ERROR) << "Fail to access " << consul_url << ": "
                    << cntl.ErrorText();
         return DegradeToOtherServiceIfNeeded(service_name, servers);
-    }
-
-    const std::string* index = cntl.http_response().GetHeader(kConsulIndex);
-    if (index != nullptr) {
-        if (*index == _consul_index) {
-            LOG_EVERY_N(INFO, 100) << "There is no service changed for the list of "
-                                    << service_name
-                                    << ", consul_index: " << _consul_index;
-            return -1;
-        }
-    } else {
-        LOG(ERROR) << "Failed to parse consul index of " << service_name << ".";
-        return -1;
     }
 
     // Sort/unique the inserted vector is faster, but may have a different order
@@ -137,55 +122,52 @@ int ConsulNamingService::GetServers(const char* service_name,
     }
 
     for (BUTIL_RAPIDJSON_NAMESPACE::SizeType i = 0; i < services.Size(); ++i) {
-        auto itr_service = services[i].FindMember("Service");
-        if (itr_service == services[i].MemberEnd()) {
-            LOG(ERROR) << "No service info in node: "
+        auto itr_host = services[i].FindMember("Host");
+        if (itr_host == services[i].MemberEnd() || !itr_host->value.IsString()) {
+            LOG(ERROR) << "No host info in node: "
                        << RapidjsonValueToString(services[i]);
             continue;
         }
 
-        const BUTIL_RAPIDJSON_NAMESPACE::Value& service = itr_service->value;
-        auto itr_address = service.FindMember("Address");
-        auto itr_port = service.FindMember("Port");
-        if (itr_address == service.MemberEnd() ||
-            !itr_address->value.IsString() ||
-            itr_port == service.MemberEnd() ||
-            !itr_port->value.IsUint()) {
-            LOG(ERROR) << "Service with no valid address or port: "
-                       << RapidjsonValueToString(service);
+        auto itr_port = services[i].FindMember("Port");
+        if (itr_port == services[i].MemberEnd() || !itr_port->value.IsUint()) {
+            LOG(ERROR) << "No port info in node: "
+                       << RapidjsonValueToString(services[i]);
             continue;
         }
 
         butil::EndPoint end_point;
-        if (str2endpoint(service["Address"].GetString(),
-                         service["Port"].GetUint(),
+        if (str2endpoint(services[i]["Host"].GetString(),
+                         services[i]["Port"].GetUint(),
                          &end_point) != 0) {
             LOG(ERROR) << "Service with illegal address or port: "
-                       << RapidjsonValueToString(service);
+                       << RapidjsonValueToString(services[i]);
             continue;
         }
 
         ServerNode node;
         node.addr = end_point;
-        auto itr_tags = service.FindMember("Tags");
-        if (itr_tags != service.MemberEnd()) {
-            if (itr_tags->value.IsArray()) {
-                if (itr_tags->value.Size() > 0) {
-                    // Tags in consul is an array, here we only use the first one.
-                    const BUTIL_RAPIDJSON_NAMESPACE::Value& tag = itr_tags->value[0];
-                    if (tag.IsString()) {
-                        node.tag = tag.GetString();
-                    } else {
-                        LOG(ERROR) << "First tag returned by consul is not string, service: "
-                                   << RapidjsonValueToString(service);
-                        continue;
-                    }
-                }
-            } else {
-                LOG(ERROR) << "Service tags returned by consul is not json array, service: "
-                           << RapidjsonValueToString(service);
+        auto itr_tags = services[i].FindMember("Tags");
+        if (itr_tags == services[i].MemberEnd() || !itr_tags->value.IsObject()) {
+                LOG(ERROR) << "Service tags returned by consul is not object, service: "
+                           << RapidjsonValueToString(services[i]);
                 continue;
-            }
+        } else {
+                std::stringstream ss;
+
+                for (auto itr = itr_tags->value.MemberBegin();
+                     itr != itr_tags->value.MemberEnd(); ++itr) {
+                        std::string tag(itr->name.GetString());
+
+                        tag.append("=").append(itr->value.GetString());
+                        node.tags.push_back(tag);
+                }
+
+                std::sort(node.tags.begin(), node.tags.end());
+                for (auto t : node.tags) {
+                        ss << t << ",";
+                }
+                node.tag = ss.str();
         }
 
         if (presence.insert(node).second) {
@@ -194,8 +176,6 @@ int ConsulNamingService::GetServers(const char* service_name,
             RPC_VLOG << "Duplicated server=" << node;
         }
     }
-
-    _consul_index = *index;
 
     if (servers->empty() && !services.Empty()) {
         LOG(ERROR) << "All service about " << service_name
@@ -231,7 +211,7 @@ int ConsulNamingService::RunNamingService(const char* service_name,
                 servers.clear();
                 actions->ResetServers(servers);
             }
-            if (bthread_usleep(std::max(FLAGS_consul_retry_interval_ms, 1) * butil::Time::kMicrosecondsPerMillisecond) < 0) {
+            if (bthread_usleep(std::max(FLAGS_consul_retry_interval_ms, 1) * butil::Time::kMillisecondsPerSecond) < 0) {
                 if (errno == ESTOP) {
                     RPC_VLOG << "Quit NamingServiceThread=" << bthread_self();
                     return 0;
@@ -239,6 +219,14 @@ int ConsulNamingService::RunNamingService(const char* service_name,
                 PLOG(FATAL) << "Fail to sleep";
                 return -1;
             }
+        }
+        if (bthread_usleep(FLAGS_consul_polling_interval_secs * butil::Time::kMicrosecondsPerSecond) < 0) {
+            if (errno == ESTOP) {
+                RPC_VLOG << "Quit NamingServiceThread=" << bthread_self();
+                return 0;
+            }
+            PLOG(FATAL) << "Fail to sleep";
+            return -1;
         }
     }
     CHECK(false);
