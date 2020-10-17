@@ -1274,6 +1274,20 @@ int IOBuf::resize(size_t n, char c) {
     return 0;
 }
 
+StringPiece IOBuf::expand(size_t hint) {
+    IOBuf::Block* b = iobuf::share_tls_block();
+    if (BAIDU_UNLIKELY(!b)) {
+        StringPiece();
+    }
+
+    const size_t nc = std::min(hint, b->left_space());
+    memset(b->data + b->size, '\0', nc);
+    const IOBuf::BlockRef r = {(uint32_t)b->size, (uint32_t)nc, b};
+    _push_back_ref(r);
+    b->size += nc;
+    return StringPiece(r.block->data + r.offset, r.length);
+}
+
 // NOTE: We don't use C++ bitwise fields which make copying slower.
 static const int REF_INDEX_BITS = 19;
 static const int REF_OFFSET_BITS = 15;

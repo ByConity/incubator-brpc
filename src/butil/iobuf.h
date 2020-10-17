@@ -267,6 +267,8 @@ public:
     int resize(size_t n) { return resize(n, '\0'); }
     int resize(size_t n, char c);
 
+    StringPiece expand(size_t hint);
+
     // Reserve `n' uninitialized bytes at back-side.
     // Returns an object representing the reserved area, INVALID_AREA on failure.
     // NOTE: reserve(0) returns INVALID_AREA.
