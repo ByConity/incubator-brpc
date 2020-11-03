@@ -49,8 +49,10 @@ extern void* __attribute__((weak)) _dl_sym(void* handle, const char* symbol, voi
 
 namespace bthread {
 // Warm up backtrace before main().
-void* dummy_buf[4];
-const int ALLOW_UNUSED dummy_bt = backtrace(dummy_buf, arraysize(dummy_buf));
+// ByteDance ClickHouse: CH BaseDaemon will close the fds after main that opened in libunwind.
+// That would cause invalid fds and incorrect usage further.
+// void* dummy_buf[4];
+// const int ALLOW_UNUSED dummy_bt = backtrace(dummy_buf, arraysize(dummy_buf));
 
 // For controlling contentions collected per second.
 static bvar::CollectorSpeedLimit g_cp_sl = BVAR_COLLECTOR_SPEED_LIMIT_INITIALIZER;
