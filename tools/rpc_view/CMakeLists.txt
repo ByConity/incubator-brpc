@@ -15,8 +15,12 @@
 # specific language governing permissions and limitations
 # under the License.
 
-include(FindProtobuf)
-protobuf_generate_cpp(PROTO_SRC PROTO_HEADER view.proto)
+if (USE_INTERNAL_PROTOBUF_LIBRARY)
+    PROTOBUF_GENERATE_CPP(PROTO_SRC PROTO_HEADER view.proto)
+else()
+    include(FindProtobuf)
+    protobuf_generate_cpp(PROTO_SRC PROTO_HEADER view.proto)
+endif()
 include_directories(${CMAKE_CURRENT_BINARY_DIR})
 
 add_executable(rpc_view rpc_view.cpp ${PROTO_SRC})
