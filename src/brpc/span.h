@@ -56,20 +56,22 @@ public:
     static Span* CreateServerSpan(
         const std::string& full_method_name,
         uint64_t trace_id, uint64_t span_id, uint64_t parent_span_id,
-        int64_t base_real_us);
+        int64_t base_real_us) { return NULL; }
     // Create a span without name to track a request inside server.
     static Span* CreateServerSpan(
         uint64_t trace_id, uint64_t span_id, uint64_t parent_span_id,
-        int64_t base_real_us);
+        int64_t base_real_us) { return NULL; }
 
     // Clear all annotations and reset name of the span.
-    void ResetServerSpanName(const std::string& name);
+    static void ResetServerSpanName(const std::string& name) {}
 
     // Create a span to track a request inside channel.
     static Span* CreateClientSpan(const std::string& full_method_name,
-                                  int64_t base_real_us);
+                                  int64_t base_real_us) {
+		return NULL;
+	}
 
-    static void Submit(Span* span, int64_t cpuwide_time_us);
+    static void Submit(Span* span, int64_t cpuwide_time_us) {}
 
     // Set tls parent.
     void AsParent() {
@@ -77,12 +79,12 @@ public:
     }
 
     // Add log with time.
-    void Annotate(const char* fmt, ...);
-    void Annotate(const char* fmt, va_list args);
-    void Annotate(const std::string& info);
+    void Annotate(const char* fmt, ...) {}
+    void Annotate(const char* fmt, va_list args) {}
+    void Annotate(const std::string& info) {}
     // When length <= 0, use strlen instead.
-    void AnnotateCStr(const char* cstr, size_t length);
-    
+    void AnnotateCStr(const char* cstr, size_t length) {}
+
     // #child spans, Not O(1)
     size_t CountClientSpans() const;
 
@@ -185,18 +187,10 @@ private:
 // Extract name and annotations from Span::info()
 class SpanInfoExtractor {
 public:
-    SpanInfoExtractor(const char* info);
+    SpanInfoExtractor(const char* info) {}
     bool PopAnnotation(int64_t before_this_time,
-                       int64_t* time, std::string* annotation);
-private:
-    butil::StringSplitter _sp;
+                       int64_t* time, std::string* annotation) { return false; }
 };
-
-// These two functions can be used for composing TRACEPRINT as well as hiding
-// span implementations.
-bool CanAnnotateSpan();
-void AnnotateSpan(const char* fmt, ...);
-
 
 class SpanFilter {
 public:
@@ -204,20 +198,22 @@ public:
 };
 
 class SpanDB;
-    
+
 // Find a span by its trace_id and span_id, serialize it into `span'.
-int FindSpan(uint64_t trace_id, uint64_t span_id, RpczSpan* span);
+static inline int FindSpan(uint64_t trace_id, uint64_t span_id, RpczSpan* span) {
+	return 0;
+}
 
 // Find spans by their trace_id, serialize them into `out'
-void FindSpans(uint64_t trace_id, std::deque<RpczSpan>* out);
+static inline void FindSpans(uint64_t trace_id, std::deque<RpczSpan>* out) {}
 
 // Put at most `max_scan' spans before `before_this_time' into `out'.
 // If filter is not NULL, only push spans that make SpanFilter::Keep()
 // true.
-void ListSpans(int64_t before_this_time, size_t max_scan,
-               std::deque<BriefSpan>* out, SpanFilter* filter);
+static inline void ListSpans(int64_t before_this_time, size_t max_scan,
+               std::deque<BriefSpan>* out, SpanFilter* filter) {}
 
-void DescribeSpanDB(std::ostream& os);
+static inline void DescribeSpanDB(std::ostream& os) {}
 
 SpanDB* LoadSpanDBFromFile(const char* filepath);
 int FindSpan(SpanDB* db, uint64_t trace_id, uint64_t span_id, RpczSpan* span);
@@ -227,10 +223,8 @@ void ListSpans(SpanDB* db, int64_t before_this_time, size_t max_scan,
 
 // Check this function first before creating a span.
 // If rpcz of upstream is enabled, local rpcz is enabled automatically.
-inline bool IsTraceable(bool is_upstream_traced) {
-    extern bvar::CollectorSpeedLimit g_span_sl;
-    return is_upstream_traced ||
-        (FLAGS_enable_rpcz && bvar::is_collectable(&g_span_sl));
+static inline bool IsTraceable(bool is_upstream_traced) {
+    return false;
 }
 
 } // namespace brpc

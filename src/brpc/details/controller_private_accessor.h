@@ -100,7 +100,11 @@ public:
         return *this;
     }
     
+#ifdef WITH_LEVELDB
     Span* span() const { return _cntl->_span; }
+#else
+    Span* span() const { return nullptr; }
+#endif
 
     uint32_t pipelined_count() const { return _cntl->_pipelined_count; }
     void set_pipelined_count(uint32_t count) {  _cntl->_pipelined_count = count; }

@@ -163,10 +163,12 @@ else()
 endif()
 find_package(Threads REQUIRED)
 
+if(WITH_LEVELDB)
 find_path(LEVELDB_INCLUDE_PATH NAMES leveldb/db.h)
 find_library(LEVELDB_LIB NAMES leveldb)
 if ((NOT LEVELDB_INCLUDE_PATH) OR (NOT LEVELDB_LIB))
     message(FATAL_ERROR "Fail to find leveldb")
+endif()
 endif()
 
 if(WITH_SNAPPY)
