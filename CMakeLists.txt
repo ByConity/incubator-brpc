@@ -242,8 +242,7 @@ set(DYNAMIC_LIB
     ${THRIFT_LIB}
     ${THRIFTNB_LIB}
     ${OPENSSL_CRYPTO_LIBRARY}
-    dl
-    z)
+    dl)
 
 if(WITH_MESALINK)
     list(APPEND DYNAMIC_LIB ${MESALINK_LIB})
