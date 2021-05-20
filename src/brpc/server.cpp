@@ -1204,6 +1204,7 @@ int Server::Join() {
         // still-running bthreads (created by the server). The memory is
         // leaked but servers are unlikely to be started/stopped frequently,
         // the leak is acceptable in most scenarios.
+        delete _keytable_pool;
         _keytable_pool = NULL;
     }
 
