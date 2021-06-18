@@ -27,7 +27,15 @@
 #include "butil/logging.h"                      // CHECK
 #endif
 
+#if defined(THREAD_SANITIZER)
+#define BRPC_USE_PTHREAD_ONLY
+#endif
+
+#ifdef BRPC_USE_PTHREAD_ONLY
+typedef pthread_t bthread_t;
+#else
 typedef uint64_t bthread_t;
+#endif
 
 // tid returned by bthread_start_* never equals this value.
 static const bthread_t INVALID_BTHREAD = 0;
