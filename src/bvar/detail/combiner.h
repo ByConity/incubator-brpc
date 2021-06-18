@@ -83,6 +83,7 @@ public:
         _value = new_value;
     }
 
+__attribute__((no_sanitize("thread")))
     void exchange(T* prev, const T& new_value) {
         butil::AutoLock guard(_lock);
         *prev = _value;
@@ -251,6 +252,7 @@ friend class GlobalValue<self_type>;
     { return _result_identity; }
 
     // [Threadsafe] May be called from anywhere.
+__attribute__((no_sanitize("thread")))
     ResultTp reset_all_agents() {
         ElementTp prev;
         butil::AutoLock guard(_lock);

@@ -645,7 +645,11 @@ friend class Controller;
     SimpleDataPool* _session_local_data_pool;
     ThreadLocalOptions _tl_options;
 
+#if defined(THREAD_SANITIZER)
+    std::atomic<Status> _status;
+#else
     Status _status;
+#endif
     int _builtin_service_count;
     // number of the virtual services for mapping URL to methods.
     int _virtual_service_count;

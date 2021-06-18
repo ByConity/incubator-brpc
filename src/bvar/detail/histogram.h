@@ -3,6 +3,7 @@
 
 #include <array>
 #include <cstdint>
+#include <limits>
 #include <ostream>                      // std::ostream
 #include <stdint.h>                     // uint32_t
 #include "butil/logging.h"                // ARRAY_SIZE

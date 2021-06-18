@@ -12,6 +12,7 @@ Histogram::Histogram()
     memset(&_buckets, 0, sizeof(_buckets));
 }
 
+__attribute__((no_sanitize("thread")))
 Histogram::~Histogram()
 {
     for (size_t i = 0; i < NUM_BUCKETS; ++i)
@@ -21,6 +22,7 @@ Histogram::~Histogram()
     }
 }
 
+__attribute__((no_sanitize("thread")))
 uint64_t Histogram::get_value(size_t i) const
 {
     if (_buckets[i] != NULL)
@@ -29,6 +31,7 @@ uint64_t Histogram::get_value(size_t i) const
         return 0;
 }
 
+__attribute__((no_sanitize("thread")))
 Histogram& Histogram::operator<<(int64_t latency)
 {
     if (latency < 0) {

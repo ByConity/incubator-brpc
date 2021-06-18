@@ -51,13 +51,21 @@ const static LocalStorage LOCAL_STORAGE_INIT = BTHREAD_LOCAL_STORAGE_INITIALIZER
 struct TaskMeta {
     // [Not Reset]
     butil::atomic<ButexWaiter*> current_waiter;
+#if defined(THREAD_SANITIZER)
+    std::atomic<uint64_t> current_sleep;
+#else
     uint64_t current_sleep;
+#endif
 
     // A builtin flag to mark if the thread is stopping.
     bool stop;
 
     // The thread is interrupted and should wake up from some blocking ops.
+#if defined(THREAD_SANITIZER)
+    std::atomic<bool> interrupted;
+#else
     bool interrupted;
+#endif
 
     // Scheduling of the thread can be delayed.
     bool about_to_quit;
@@ -66,7 +74,11 @@ struct TaskMeta {
     pthread_spinlock_t version_lock;
     
     // [Not Reset] only modified by one bthread at any time, no need to be atomic
+#if defined(THREAD_SANITIZER)
+    butil::atomic<uint32_t>* version_butex;
+#else
     uint32_t* version_butex;
+#endif
 
     // The identifier. It does not have to be here, however many code is
     // simplified if they can get tid from TaskMeta.

@@ -24,6 +24,7 @@
 
 namespace brpc {
 
+__attribute__((no_sanitize("thread")))
 static int cast_int(void* arg) {
     return *(int*)arg;
 }

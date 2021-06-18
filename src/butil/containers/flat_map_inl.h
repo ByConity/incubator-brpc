@@ -503,6 +503,7 @@ _T* FlatMap<_K, _T, _H, _E, _S>::seek(const K2& key) const {
 }
 
 template <typename _K, typename _T, typename _H, typename _E, bool _S>
+__attribute__((no_sanitize("thread")))
 _T& FlatMap<_K, _T, _H, _E, _S>::operator[](const key_type& key) {
     const size_t index = flatmap_mod(_hashfn(key), _nbucket);
     Bucket& first_node = _buckets[index];

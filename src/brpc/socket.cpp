@@ -468,7 +468,11 @@ Socket::Socket(Forbidden)
 {
     CreateVarsOnce();
     pthread_mutex_init(&_id_wait_list_mutex, NULL);
+#if defined(THREAD_SANITIZER)
+    _epollout_butex = bthread::butex_create_checked<int>();
+#else
     _epollout_butex = bthread::butex_create_checked<butil::atomic<int> >();
+#endif
 }
 
 Socket::~Socket() {
