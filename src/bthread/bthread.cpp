@@ -19,7 +19,7 @@
 
 // Date: Tue Jul 10 17:40:58 CST 2012
 
-#ifdef BRPC_USE_PTHREAD_ONLY
+#if defined(THREAD_SANITIZER)
 #include <csignal>
 #endif
 #include <gflags/gflags.h>

@@ -215,6 +215,10 @@ int Stream::Connect(Socket* ptr, const timespec*,
         if (bthread_start_urgent(&tid, &BTHREAD_ATTR_NORMAL, RunOnConnect, meta) != 0) {
             LOG(FATAL) << "Fail to start bthread, " << berror();
             RunOnConnect(meta);
+#ifdef BRPC_USE_PTHREAD_ONLY
+        } else {
+            pthread_detach(tid);
+#endif
         }
         return 0;
     }
@@ -269,6 +273,10 @@ void Stream::TriggerOnConnectIfNeed() {
         if (bthread_start_urgent(&tid, &BTHREAD_ATTR_NORMAL, RunOnConnect, meta) != 0) {
             LOG(FATAL) << "Fail to start bthread, " << berror();
             RunOnConnect(meta);
+#ifdef BRPC_USE_PTHREAD_ONLY
+        } else {
+            pthread_detach(tid);
+#endif
         }
         return;
     }
@@ -384,6 +392,10 @@ int Stream::TriggerOnWritable(bthread_id_t id, void *data, int error_code) {
         if (bthread_start_background(&tid, attr, RunOnWritable, wm) != 0) {
             LOG(FATAL) << "Fail to start bthread" << berror();
             RunOnWritable(wm);
+#ifdef BRPC_USE_PTHREAD_ONLY
+        } else {
+            pthread_detach(tid);
+#endif
         }
     } else {
         RunOnWritable(wm);
@@ -774,6 +786,10 @@ void StreamWait(StreamId stream_id, const timespec *due_time,
         if (bthread_start_background(&tid, attr, Stream::RunOnWritable, wm) != 0) {
             PLOG(FATAL) << "Fail to start bthread";
             Stream::RunOnWritable(wm);
+#ifdef BRPC_USE_PTHREAD_ONLY
+        } else {
+            pthread_detach(tid);
+#endif
         }
         return;
     }

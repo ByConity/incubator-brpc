@@ -525,6 +525,9 @@ int Controller::RunOnCancel(bthread_id_t id, void* data, int error_code) {
         static_cast<google::protobuf::Closure*>(data), id);
     bthread_t th;
     CHECK_EQ(0, bthread_start_urgent(&th, NULL, RunOnCancelThread::RunThis, arg));
+#ifdef BRPC_USE_PTHREAD_ONLY
+    pthread_detach(th);
+#endif
     return 0;
 }
 
@@ -693,6 +696,10 @@ END_OF_RPC:
         if (bthread_start_background(&bt, &attr, RunEndRPC, this) != 0) {
             LOG(FATAL) << "Fail to start bthread";
             EndRPC(info);
+#ifdef BRPC_USE_PTHREAD_ONLY
+        } else {
+            pthread_detach(bt);
+#endif
         }
     } else {
         if (_done != NULL/*Note[_done]*/ &&

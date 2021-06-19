@@ -620,6 +620,9 @@ static void GlobalInitializeOrDieImpl() {
     bthread_t th;
     CHECK(bthread_start_background(&th, NULL, GlobalUpdate, NULL) == 0)
         << "Fail to start GlobalUpdate";
+#ifdef BRPC_USE_PTHREAD_ONLY
+    pthread_detach(th);
+#endif
 }
 
 void GlobalInitializeOrDie() {

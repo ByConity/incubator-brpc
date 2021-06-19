@@ -994,6 +994,9 @@ H2ParseResult H2Context::OnGoAway(
             tmp.keytable_pool = _socket->keytable_pool();
             CHECK_EQ(0, bthread_start_background(&th, &tmp, ProcessHttpResponseWrapper,
                          static_cast<InputMessageBase*>(goaway_streams[i])));
+#ifdef BRPC_USE_PTHREAD_ONLY
+            pthread_detach(th);
+#endif
         }
         return MakeH2Message(goaway_streams[0]);
     } else {

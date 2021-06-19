@@ -114,6 +114,10 @@ void ExecutionQueueBase::start_execute(TaskNode* node) {
                                      _execute_tasks, node) != 0) {
             PLOG(FATAL) << "Fail to start bthread";
             _execute_tasks(node);
+#ifdef BRPC_USE_PTHREAD_ONLY
+        } else {
+            pthread_detach(tid);
+#endif
         }
     } else {
         if (_options.executor->submit(_execute_tasks, node) != 0) {
