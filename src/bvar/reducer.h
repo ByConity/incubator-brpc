@@ -253,6 +253,7 @@ struct MaxTo {
     }
 };
 class LatencyRecorderBase;
+class LatencyHistogramRecorderBase;
 }
 template <typename T>
 class Maxer : public Reducer<T, detail::MaxTo<T> > {
@@ -273,6 +274,7 @@ public:
     ~Maxer() { Variable::hide(); }
 private:
     friend class detail::LatencyRecorderBase;
+    friend class detail::LatencyHistogramRecorderBase;
     // The following private funcition a now used in LatencyRecorder,
     // it's dangerous so we don't make them public
     explicit Maxer(T default_value) : Base(default_value) {

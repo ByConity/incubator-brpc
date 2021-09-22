@@ -22,6 +22,7 @@
 #include <butil/macros.h>
 #include <butil/file_util.h>
 #include <bvar/bvar.h>
+#include <bvar/latency_recorder.h>
 #include <bthread/bthread.h>
 #include <brpc/channel.h>
 #include <brpc/server.h>

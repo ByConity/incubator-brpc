@@ -115,24 +115,24 @@ void MethodStatus::Describe(
     // latencies
     OutputValue(os, "latency: ", _latency_rec.latency_name(),
                 _latency_rec.latency(), options, false);
-    if (options.use_html) {
-        OutputValue(os, "latency_percentiles: ",
-                    _latency_rec.latency_percentiles_name(),
-                    _latency_rec.latency_percentiles(), options, false);
-        OutputValue(os, "latency_cdf: ", _latency_rec.latency_cdf_name(),
-                    "click to view", options, expand);
-    } else {
-        OutputTextValue(os, "latency_50: ",
-                        _latency_rec.latency_percentile(0.5));
-        OutputTextValue(os, "latency_90: ",
-                        _latency_rec.latency_percentile(0.9));
-        OutputTextValue(os, "latency_99: ",
-                        _latency_rec.latency_percentile(0.99));
-        OutputTextValue(os, "latency_999: ",
-                        _latency_rec.latency_percentile(0.999));
-        OutputTextValue(os, "latency_9999: ",
-                        _latency_rec.latency_percentile(0.9999));
-    }
+    // if (options.use_html) {
+    //     OutputValue(os, "latency_percentiles: ",
+    //                 _latency_rec.latency_percentiles_name(),
+    //                 _latency_rec.latency_percentiles(), options, false);
+    //     OutputValue(os, "latency_cdf: ", _latency_rec.latency_cdf_name(),
+    //                 "click to view", options, expand);
+    // } else {
+    //     OutputTextValue(os, "latency_50: ",
+    //                     _latency_rec.latency_percentile(0.5));
+    //     OutputTextValue(os, "latency_90: ",
+    //                     _latency_rec.latency_percentile(0.9));
+    //     OutputTextValue(os, "latency_99: ",
+    //                     _latency_rec.latency_percentile(0.99));
+    //     OutputTextValue(os, "latency_999: ",
+    //                     _latency_rec.latency_percentile(0.999));
+    //     OutputTextValue(os, "latency_9999: ",
+    //                     _latency_rec.latency_percentile(0.9999));
+    // }
     OutputValue(os, "max_latency: ", _latency_rec.max_latency_name(),
                 _latency_rec.max_latency(), options, false);
 
