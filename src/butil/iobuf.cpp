@@ -312,7 +312,7 @@ inline IOBuf::Block* create_block(const size_t block_size) {
 }
 
 inline IOBuf::Block* create_block() {
-    return create_block(IOBuf::DEFAULT_BLOCK_SIZE);
+    return create_block(IOBuf::BRPC_DEFAULT_BLOCK_SIZE);
 }
 
 // === Share TLS blocks between appending operations ===
@@ -495,7 +495,7 @@ size_t IOBuf::block_count_hit_tls_threshold() {
 BAIDU_CASSERT(sizeof(IOBuf::SmallView) == sizeof(IOBuf::BigView),
               sizeof_small_and_big_view_should_equal);
 
-BAIDU_CASSERT(IOBuf::DEFAULT_BLOCK_SIZE/4096*4096 == IOBuf::DEFAULT_BLOCK_SIZE,
+BAIDU_CASSERT(IOBuf::BRPC_DEFAULT_BLOCK_SIZE/4096*4096 == IOBuf::BRPC_DEFAULT_BLOCK_SIZE,
               sizeof_block_should_be_multiply_of_4096);
 
 const IOBuf::Area IOBuf::INVALID_AREA;
@@ -994,6 +994,7 @@ ssize_t IOBuf::cut_into_SSL_channel(SSL* ssl, int* ssl_error) {
 
 ssize_t IOBuf::cut_multiple_into_SSL_channel(SSL* ssl, IOBuf* const* pieces,
                                              size_t count, int* ssl_error) {
+#ifndef NO_SSL                                                
     ssize_t nw = 0;
     *ssl_error = SSL_ERROR_NONE;
     for (size_t i = 0; i < count; ) {
@@ -1044,6 +1045,12 @@ ssize_t IOBuf::cut_multiple_into_SSL_channel(SSL* ssl, IOBuf* const* pieces,
 #endif
 
     return nw;
+
+#else
+    LOG(ERROR) << "Macro NO_SSL is defined!";
+    *ssl_error = SSL_ERROR_SSL;
+    return 0;
+#endif
 }
 
 ssize_t IOBuf::pcut_multiple_into_file_descriptor(
@@ -1704,9 +1711,9 @@ ssize_t IOPortal::append_from_reader(IReader* reader, size_t max_count) {
     return nr;
 }
 
-
 ssize_t IOPortal::append_from_SSL_channel(
     SSL* ssl, int* ssl_error, size_t max_count) {
+#ifndef NO_SSL
     size_t nr = 0;
     do {
         if (!_block) {
@@ -1748,6 +1755,11 @@ ssize_t IOPortal::append_from_SSL_channel(
         }
     } while (nr < max_count);
     return nr;
+#else
+    LOG(ERROR) << "Macro NO_SSL is defined!";
+    *ssl_error = SSL_ERROR_SSL;
+    return 0;
+#endif
 }
 
 void IOPortal::return_cached_blocks_impl(Block* b) {

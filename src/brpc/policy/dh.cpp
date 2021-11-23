@@ -24,6 +24,7 @@
 namespace brpc {
 namespace policy {
 
+
 void DHWrapper::clear() {
     if (_pdh != NULL) {
         DH_free(_pdh);
@@ -91,6 +92,7 @@ int DHWrapper::copy_shared_key(const void* ppkey, int ppkey_size,
 }
     
 int DHWrapper::do_initialize() {
+    #ifndef NO_SSL
     BIGNUM* p = get_rfc2409_prime_1024(NULL);
     if (!p) {
         return -1;
@@ -116,8 +118,11 @@ int DHWrapper::do_initialize() {
         LOG(ERROR) << "Fail to DH_generate_key";
         return -1;
     }
+    #else
+        LOG(ERROR) << "Macro NO_SSL is defined!";
+        return -1;
+    #endif
     return 0;
 }
-
 }  // namespace policy
 } // namespace brpc

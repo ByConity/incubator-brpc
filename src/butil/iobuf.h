@@ -64,7 +64,7 @@ friend class IOBufAsZeroCopyOutputStream;
 friend class IOBufBytesIterator;
 friend class IOBufCutter;
 public:
-    static const size_t DEFAULT_BLOCK_SIZE = 8192;
+    static const size_t BRPC_DEFAULT_BLOCK_SIZE = 8192;
     static const size_t INITIAL_CAP = 32; // must be power of 2
 
     struct Block;

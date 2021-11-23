@@ -334,12 +334,15 @@ static void GlobalInitializeOrDieImpl() {
     // setenv("TCMALLOC_SAMPLE_PARAMETER", "524288", 0);
 
     // Initialize openssl library
+    #ifndef NO_SSL
+
     SSL_library_init();
     // RPC doesn't require openssl.cnf, users can load it by themselves if needed
     SSL_load_error_strings();
     if (SSLThreadInit() != 0 || SSLDHInit() != 0) {
         exit(1);
     }
+    #endif
 
     // Defined in http_rpc_protocol.cpp
     InitCommonStrings();

@@ -1857,6 +1857,7 @@ int Socket::SSLHandshake(int fd, bool server_mode) {
         return 0;
     }
 
+    #ifndef NO_SSL
     // TODO: Reuse ssl session id for client
     if (_ssl_session) {
         // Free the last session, which may be deprecated when socket failed
@@ -1924,6 +1925,10 @@ int Socket::SSLHandshake(int fd, bool server_mode) {
         }
         }
     }
+    #else
+        LOG(ERROR) << "Macro NO_SSL is defined!";
+        return -1;
+    #endif
 }
 
 ssize_t Socket::DoRead(size_t size_hint) {
