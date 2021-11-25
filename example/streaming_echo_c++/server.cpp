@@ -47,6 +47,9 @@ public:
         LOG(INFO) << "Stream=" << id << " is closed";
     }
 
+    virtual void on_finished(brpc::StreamId id, int32_t finish_code) {
+        LOG(INFO) << "Stream=" << id << " is finished, code " << finish_code;
+    }
 };
 
 // Your implementation of example::EchoService
@@ -67,7 +70,7 @@ public:
         brpc::Controller* cntl =
             static_cast<brpc::Controller*>(controller);
         brpc::StreamOptions stream_options;
-        stream_options.handler = &_receiver;
+        stream_options.handler = _receiver;
         if (brpc::StreamAccept(&_sd, *cntl, &stream_options) != 0) {
             cntl->SetFailed("Fail to accept stream");
             return;
@@ -76,7 +79,7 @@ public:
     }
 
 private:
-    StreamReceiver _receiver;
+    std::shared_ptr<StreamReceiver> _receiver = std::make_shared<StreamReceiver>();
     brpc::StreamId _sd;
 };
 
