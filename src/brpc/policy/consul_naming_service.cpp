@@ -39,9 +39,6 @@ DEFINE_string(consul_agent_addr, "http://127.0.0.1:2280",
 DEFINE_string(consul_service_discovery_url,
               "/v1/lookup/name",
               "The url of consul for discovering service.");
-DEFINE_string(consul_url_parameter, "",
-    "The query string of request consul for discovering service. "
-    "for example: `&addr-family=dual-stack&unique=v6`");
 DEFINE_int32(consul_connect_timeout_ms, 200,
              "Timeout for creating connections to consul in milliseconds");
 DEFINE_int32(consul_blocking_query_wait_secs, 60,
@@ -63,6 +60,19 @@ std::string RapidjsonValueToString(const BUTIL_RAPIDJSON_NAMESPACE::Value& value
     return buffer.GetString();
 }
 
+std::string addBracketsIfIpv6(const std::string & host_name)
+{
+    std::string res = host_name;
+
+    if ((host_name.find_first_of(':') != std::string::npos) &&
+        (!host_name.empty()) &&
+        (host_name.back() != ']'))
+    {
+        res = '[' + host_name + ']';
+    }
+    return res;
+}
+
 int ConsulNamingService::DegradeToOtherServiceIfNeeded(const char* service_name,
                                                        std::vector<ServerNode>* servers) {
     if (FLAGS_consul_enable_degrade_to_file_naming_service && !_backup_file_loaded) {
@@ -75,6 +85,38 @@ int ConsulNamingService::DegradeToOtherServiceIfNeeded(const char* service_name,
     return -1;
 }
 
+std::string GetConsulAddr() {
+  // if gflag is set, just use it
+  gflags::CommandLineFlagInfo info;
+  if (GetCommandLineFlagInfo("consul_agent_addr", &info) && !info.is_default) {
+    return FLAGS_consul_agent_addr;
+  }
+
+  std::string agent_host = "127.0.0.1";
+  int agent_port = 2280;
+
+  // get ip from env
+  auto envs = {"CONSUL_HTTP_HOST", "MY_HOST_IP", "TCE_HOST_IP", "MY_HOST_IPV6"};
+  for (const char * env : envs) {
+    const char* host = getenv(env);
+    if (host && host[0]) {
+      agent_host = host;
+      break;
+    }
+  }
+
+  // get port from env
+  const char* port = getenv("CONSUL_HTTP_PORT");
+  if (port && port[0]) {
+    int tmp_port = std::stoi(port);
+    if ((tmp_port > 0) && (tmp_port < 65536)) {
+      agent_port = tmp_port;
+    }
+  }
+
+  return "http://" + addBracketsIfIpv6(agent_host) + ":" + std::to_string(agent_port);
+}
+
 int ConsulNamingService::GetServers(const char* service_name,
                                     std::vector<ServerNode>* servers) {
     if (!_consul_connected) {
@@ -82,18 +124,35 @@ int ConsulNamingService::GetServers(const char* service_name,
         opt.protocol = PROTOCOL_HTTP;
         opt.connect_timeout_ms = FLAGS_consul_connect_timeout_ms;
         opt.timeout_ms = (FLAGS_consul_blocking_query_wait_secs + 10) * butil::Time::kMillisecondsPerSecond;
-        if (_channel.Init(FLAGS_consul_agent_addr.c_str(), "rr", &opt) != 0) {
-            LOG(ERROR) << "Fail to init channel to consul at " << FLAGS_consul_agent_addr;
+        std::string consul_agent_addr = GetConsulAddr();
+        if (_channel.Init(consul_agent_addr.c_str(), "rr", &opt) != 0) {
+            LOG(ERROR) << "Fail to init channel to consul at "
+                 << consul_agent_addr;
             return DegradeToOtherServiceIfNeeded(service_name, servers);
         }
         _consul_connected = true;
     }
 
     if (_consul_url.empty()) {
-        _consul_url.append(FLAGS_consul_service_discovery_url);
-        _consul_url.append("?name=");
-        _consul_url.append(service_name);
-        _consul_url.append(FLAGS_consul_url_parameter);
+        std::string consul_url_parameter;
+        char* my_host_ip = getenv("MY_HOST_IP");
+        char* byted_host_ip = getenv("BYTED_HOST_IP");
+        char* my_host_ipv6 = getenv("MY_HOST_IPV6");
+        char* byted_host_ipv6 = getenv("BYTED_HOST_IPV6");
+        bool is_ipv4 = (my_host_ip != NULL && strlen(my_host_ip) > 0) || (byted_host_ip != NULL && strlen(byted_host_ip) > 0);
+        bool is_ipv6 = (my_host_ipv6 != NULL && strlen(my_host_ipv6) > 0) || (byted_host_ipv6 != NULL && strlen(byted_host_ipv6) > 0);
+        if (is_ipv4 && is_ipv6) {
+           consul_url_parameter = "&addr-family=dual-stack&unique=v6";
+        } else if (is_ipv6) {
+           consul_url_parameter = "&addr-family=v6";
+        } else {
+           consul_url_parameter = "&addr-family=v4";
+        }
+
+        _consul_url.append(FLAGS_consul_service_discovery_url)
+               .append("?name=")
+               .append(service_name)
+               .append(consul_url_parameter);
     }
 
     servers->clear();
@@ -137,7 +196,8 @@ int ConsulNamingService::GetServers(const char* service_name,
         }
 
         butil::EndPoint end_point;
-        if (str2endpoint(services[i]["Host"].GetString(),
+        std::string formated_host = addBracketsIfIpv6(services[i]["Host"].GetString());
+        if (str2endpoint(formated_host.c_str(),
                          services[i]["Port"].GetUint(),
                          &end_point) != 0) {
             LOG(ERROR) << "Service with illegal address or port: "
