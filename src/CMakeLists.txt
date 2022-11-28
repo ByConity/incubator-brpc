@@ -70,8 +70,11 @@ if(BUILD_SHARED_LIBS)
             LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
             ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
             )
+    target_include_directories(brpc-shared PUBLIC ${GFLAGS_INCLUDE_PATH})
 else()
     target_link_libraries(protoc-gen-mcpack brpc-static ${DYNAMIC_LIB} pthread)
+    target_link_libraries(brpc-static PUBLIC ${GFLAGS_LIBRARY})
+    target_include_directories(brpc-static PUBLIC ${GFLAGS_INCLUDE_PATH})
 endif()
 
 
