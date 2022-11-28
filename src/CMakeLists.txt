@@ -27,6 +27,8 @@ add_library(BUTIL_LIB OBJECT ${BUTIL_SOURCES})
 add_library(SOURCES_LIB OBJECT ${SOURCES})
 add_dependencies(SOURCES_LIB PROTO_LIB)
 target_link_libraries(SOURCES_LIB ${ZLIB_LIBRARIES})
+target_compile_definitions(SOURCES_LIB PRIVATE NO_SSL)
+target_compile_definitions(BUTIL_LIB PRIVATE NO_SSL)
 
 # shared library needs POSITION_INDEPENDENT_CODE
 set_property(TARGET ${SOURCES_LIB} PROPERTY POSITION_INDEPENDENT_CODE 1)
