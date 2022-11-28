@@ -212,13 +212,15 @@ if(NOT PROTOC_LIB)
     endif()
 endif()
 
-if(CMAKE_SYSTEM_NAME STREQUAL "Darwin")
-    set(OPENSSL_ROOT_DIR
-        "/usr/local/opt/openssl"    # Homebrew installed OpenSSL
-        )
-endif()
+if (NOT USE_INTERNAL_SSL_LIBRARY)
+    if(CMAKE_SYSTEM_NAME STREQUAL "Darwin")
+        set(OPENSSL_ROOT_DIR
+            "/usr/local/opt/openssl"    # Homebrew installed OpenSSL
+            )
+    endif()
 
-find_package(OpenSSL)
+    find_package(OpenSSL)
+endif()
 
 include_directories(
         ${GFLAGS_INCLUDE_PATH}
