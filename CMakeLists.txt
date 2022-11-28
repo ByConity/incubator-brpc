@@ -26,8 +26,8 @@ option(WITH_THRIFT "With thrift framed protocol supported" OFF)
 option(WITH_SNAPPY "With snappy" OFF)
 option(WITH_RDMA "With RDMA" OFF)
 option(BUILD_UNIT_TESTS "Whether to build unit tests" OFF)
-option(BUILD_BRPC_TOOLS "Whether to build brpc tools" ON)
-option(DOWNLOAD_GTEST "Download and build a fresh copy of googletest. Requires Internet access." ON)
+option(BUILD_BRPC_TOOLS "Whether to build brpc tools" OFF)
+option(DOWNLOAD_GTEST "Download and build a fresh copy of googletest. Requires Internet access." OFF)
 
 # Enable MACOSX_RPATH. Run "cmake --help-policy CMP0042" for policy details.
 if(POLICY CMP0042)
