@@ -118,6 +118,9 @@ set(CMAKE_CPP_FLAGS "${CMAKE_CPP_FLAGS} ${DEFINE_CLOCK_GETTIME} -DBRPC_WITH_GLOG
 
 if (SANITIZE STREQUAL "thread")
     set(CMAKE_CPP_FLAGS "${CMAKE_CPP_FLAGS} -DTHREAD_SANITIZER")
+    if(CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
+        set(CMAKE_CPP_FLAGS "${CMAKE_CPP_FLAGS} -mllvm -tsan-instrument-memory-accesses=false")
+    endif()
 endif()
 
 if (SANITIZE STREQUAL "memory")
