@@ -44,6 +44,7 @@ public:
     // more tasks and you can safely release all the related resources ever 
     // after.
     bool is_queue_stopped() const { return _is_stopped; }
+    void set_should_break(bool _break) { _should_break = _break; }
     operator bool() const;
 protected:
     TaskIteratorBase(TaskNode* head, ExecutionQueueBase* queue,

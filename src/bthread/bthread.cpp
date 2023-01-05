@@ -19,6 +19,9 @@
 
 // Date: Tue Jul 10 17:40:58 CST 2012
 
+#if defined(THREAD_SANITIZER)
+#include <csignal>
+#endif
 #include <gflags/gflags.h>
 #include "butil/macros.h"                       // BAIDU_CASSERT
 #include "butil/logging.h"
@@ -178,7 +181,11 @@ int bthread_start_urgent(bthread_t* __restrict tid,
         // start from worker
         return bthread::TaskGroup::start_foreground(&g, tid, attr, fn, arg);
     }
+#ifdef BRPC_USE_PTHREAD_ONLY
+    return pthread_create(tid, NULL, fn, arg);
+#else
     return bthread::start_from_non_worker(tid, attr, fn, arg);
+#endif  /* !BRPC_USE_PTHREAD_ONLY */
 }
 
 int bthread_start_background(bthread_t* __restrict tid,
@@ -190,7 +197,11 @@ int bthread_start_background(bthread_t* __restrict tid,
         // start from worker
         return g->start_background<false>(tid, attr, fn, arg);
     }
+#ifdef BRPC_USE_PTHREAD_ONLY
+    return pthread_create(tid, NULL, fn, arg);
+#else
     return bthread::start_from_non_worker(tid, attr, fn, arg);
+#endif  /* !BRPC_USE_PTHREAD_ONLY */
 }
 
 void bthread_flush() {
@@ -211,15 +222,26 @@ int bthread_interrupt(bthread_t tid) {
 }
 
 int bthread_stop(bthread_t tid) {
+#ifdef BRPC_USE_PTHREAD_ONLY
+    return pthread_cancel(tid);
+#else
     bthread::TaskGroup::set_stopped(tid);
     return bthread_interrupt(tid);
+#endif  /* !BRPC_USE_PTHREAD_ONLY */
 }
 
 int bthread_stopped(bthread_t tid) {
+#ifdef BRPC_USE_PTHREAD_ONLY
+    return pthread_kill(tid, 0) == ESRCH;
+#else
     return (int)bthread::TaskGroup::is_stopped(tid);
+#endif  /* !BRPC_USE_PTHREAD_ONLY */
 }
 
 bthread_t bthread_self(void) {
+#ifdef BRPC_USE_PTHREAD_ONLY
+    return pthread_self();
+#else
     bthread::TaskGroup* g = bthread::tls_task_group;
     // note: return 0 for main tasks now, which include main thread and
     // all work threads. So that we can identify main tasks from logs
@@ -228,6 +250,7 @@ bthread_t bthread_self(void) {
         return g->current_tid();
     }
     return INVALID_BTHREAD;
+#endif  /* !BRPC_USE_PTHREAD_ONLY */
 }
 
 int bthread_equal(bthread_t t1, bthread_t t2) {
@@ -244,7 +267,11 @@ void bthread_exit(void* retval) {
 }
 
 int bthread_join(bthread_t tid, void** thread_return) {
+#ifdef BRPC_USE_PTHREAD_ONLY
+    return pthread_join(tid, thread_return);
+#else
     return bthread::TaskGroup::join(tid, thread_return);
+#endif  /* !BRPC_USE_PTHREAD_ONLY */
 }
 
 int bthread_attr_init(bthread_attr_t* a) {
@@ -265,6 +292,9 @@ int bthread_getconcurrency(void) {
 }
 
 int bthread_setconcurrency(int num) {
+#ifdef BRPC_USE_PTHREAD_ONLY
+    return 0;
+#else
     if (num < BTHREAD_MIN_CONCURRENCY || num > BTHREAD_MAX_CONCURRENCY) {
         LOG(ERROR) << "Invalid concurrency=" << num;
         return EINVAL;
@@ -311,9 +341,13 @@ int bthread_setconcurrency(int num) {
         return 0;
     }
     return (num == bthread::FLAGS_bthread_concurrency ? 0 : EPERM);
+#endif  /* !BRPC_USE_PTHREAD_ONLY */
 }
 
 int bthread_about_to_quit() {
+#ifdef BRPC_USE_PTHREAD_ONLY
+    return 0;
+#else
     bthread::TaskGroup* g = bthread::tls_task_group;
     if (g != NULL) {
         bthread::TaskMeta* current_task = g->current_task();
@@ -323,14 +357,18 @@ int bthread_about_to_quit() {
         return 0;
     }
     return EPERM;
+#endif  /* !BRPC_USE_PTHREAD_ONLY */
 }
 
 int bthread_timer_add(bthread_timer_t* id, timespec abstime,
                       void (*on_timer)(void*), void* arg) {
+#ifndef BRPC_USE_PTHREAD_ONLY
     bthread::TaskControl* c = bthread::get_or_new_task_control();
     if (c == NULL) {
         return ENOMEM;
     }
+#endif  /* !BRPC_USE_PTHREAD_ONLY */
+	// TODO: good enough?
     bthread::TimerThread* tt = bthread::get_or_create_global_timer_thread();
     if (tt == NULL) {
         return ENOMEM;
@@ -344,6 +382,7 @@ int bthread_timer_add(bthread_timer_t* id, timespec abstime,
 }
 
 int bthread_timer_del(bthread_timer_t id) {
+	// TODO:
     bthread::TaskControl* c = bthread::get_task_control();
     if (c != NULL) {
         bthread::TimerThread* tt = bthread::get_global_timer_thread();

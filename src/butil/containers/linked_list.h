@@ -125,6 +125,7 @@ class LinkNode {
   }
 
   // Remove |this| from the linked list.
+__attribute__((no_sanitize("thread")))
   void RemoveFromList() {
     this->previous_->next_ = this->next_;
     this->next_->previous_ = this->previous_;
@@ -138,6 +139,7 @@ class LinkNode {
     return previous_;
   }
 
+__attribute__((no_sanitize("thread")))
   LinkNode<T>* next() const {
     return next_;
   }

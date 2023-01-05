@@ -22,12 +22,23 @@
 #ifndef BTHREAD_TYPES_H
 #define BTHREAD_TYPES_H
 
+#if defined(THREAD_SANITIZER)
+#include <atomic>
+#endif
 #include <stdint.h>                            // uint64_t
 #if defined(__cplusplus)
 #include "butil/logging.h"                      // CHECK
 #endif
 
+#if defined(THREAD_SANITIZER)
+#define BRPC_USE_PTHREAD_ONLY
+#endif
+
+#ifdef BRPC_USE_PTHREAD_ONLY
+typedef pthread_t bthread_t;
+#else
 typedef uint64_t bthread_t;
+#endif
 
 // tid returned by bthread_start_* never equals this value.
 static const bthread_t INVALID_BTHREAD = 0;
@@ -78,9 +89,19 @@ inline std::ostream& operator<<(std::ostream& os, bthread_key_t key) {
 }
 #endif  // __cplusplus
 
+#if defined(THREAD_SANITIZER)
+namespace bthread {
+    class KeyTable;
+};
+#endif
+
 typedef struct {
     pthread_mutex_t mutex;
+#if defined(THREAD_SANITIZER)
+    std::atomic<bthread::KeyTable *> free_keytables;
+#else
     void* free_keytables;
+#endif
     int destroyed;
 } bthread_keytable_pool_t;
 
@@ -159,7 +180,11 @@ typedef struct {
 } bthread_contention_site_t;
 
 typedef struct {
+#if defined(THREAD_SANITIZER)
+    butil::atomic<unsigned>* butex;
+#else
     unsigned* butex;
+#endif
     bthread_contention_site_t csite;
 } bthread_mutex_t;
 
@@ -168,7 +193,11 @@ typedef struct {
 
 typedef struct {
     bthread_mutex_t* m;
+#if defined(THREAD_SANITIZER)
+    butil::atomic<int>* seq;
+#else
     int* seq;
+#endif
 } bthread_cond_t;
 
 typedef struct {

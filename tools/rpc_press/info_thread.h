@@ -20,6 +20,7 @@
 
 #include <pthread.h>
 #include <bvar/bvar.h>
+#include <bvar/latency_recorder.h>
 
 namespace brpc {
 

@@ -34,13 +34,11 @@
 namespace brpc {
 namespace policy {
 
-DEFINE_string(consul_agent_addr, "http://127.0.0.1:8500",
+DEFINE_string(consul_agent_addr, "http://127.0.0.1:2280",
               "The query string of request consul for discovering service.");
 DEFINE_string(consul_service_discovery_url,
-              "/v1/health/service/",
+              "/v1/lookup/name",
               "The url of consul for discovering service.");
-DEFINE_string(consul_url_parameter, "?stale&passing",
-              "The query string of request consul for discovering service.");
 DEFINE_int32(consul_connect_timeout_ms, 200,
              "Timeout for creating connections to consul in milliseconds");
 DEFINE_int32(consul_blocking_query_wait_secs, 60,
@@ -52,14 +50,27 @@ DEFINE_string(consul_file_naming_service_dir, "",
     "service name will be searched in this dir to use.");
 DEFINE_int32(consul_retry_interval_ms, 500,
              "Wait so many milliseconds before retry when error happens");
-
-constexpr char kConsulIndex[] = "X-Consul-Index";
+DEFINE_int32(consul_polling_interval_secs, 10,
+             "Wait so many seconds before polling consul again");
 
 std::string RapidjsonValueToString(const BUTIL_RAPIDJSON_NAMESPACE::Value& value) {
     BUTIL_RAPIDJSON_NAMESPACE::StringBuffer buffer;
     BUTIL_RAPIDJSON_NAMESPACE::PrettyWriter<BUTIL_RAPIDJSON_NAMESPACE::StringBuffer> writer(buffer);
     value.Accept(writer);
     return buffer.GetString();
+}
+
+std::string addBracketsIfIpv6(const std::string & host_name)
+{
+    std::string res = host_name;
+
+    if ((host_name.find_first_of(':') != std::string::npos) &&
+        (!host_name.empty()) &&
+        (host_name.back() != ']'))
+    {
+        res = '[' + host_name + ']';
+    }
+    return res;
 }
 
 int ConsulNamingService::DegradeToOtherServiceIfNeeded(const char* service_name,
@@ -74,6 +85,38 @@ int ConsulNamingService::DegradeToOtherServiceIfNeeded(const char* service_name,
     return -1;
 }
 
+std::string GetConsulAddr() {
+  // if gflag is set, just use it
+  gflags::CommandLineFlagInfo info;
+  if (GetCommandLineFlagInfo("consul_agent_addr", &info) && !info.is_default) {
+    return FLAGS_consul_agent_addr;
+  }
+
+  std::string agent_host = "127.0.0.1";
+  int agent_port = 2280;
+
+  // get ip from env
+  auto envs = {"CONSUL_HTTP_HOST", "MY_HOST_IP", "TCE_HOST_IP", "MY_HOST_IPV6"};
+  for (const char * env : envs) {
+    const char* host = getenv(env);
+    if (host && host[0]) {
+      agent_host = host;
+      break;
+    }
+  }
+
+  // get port from env
+  const char* port = getenv("CONSUL_HTTP_PORT");
+  if (port && port[0]) {
+    int tmp_port = std::stoi(port);
+    if ((tmp_port > 0) && (tmp_port < 65536)) {
+      agent_port = tmp_port;
+    }
+  }
+
+  return "http://" + addBracketsIfIpv6(agent_host) + ":" + std::to_string(agent_port);
+}
+
 int ConsulNamingService::GetServers(const char* service_name,
                                     std::vector<ServerNode>* servers) {
     if (!_consul_connected) {
@@ -81,25 +124,39 @@ int ConsulNamingService::GetServers(const char* service_name,
         opt.protocol = PROTOCOL_HTTP;
         opt.connect_timeout_ms = FLAGS_consul_connect_timeout_ms;
         opt.timeout_ms = (FLAGS_consul_blocking_query_wait_secs + 10) * butil::Time::kMillisecondsPerSecond;
-        if (_channel.Init(FLAGS_consul_agent_addr.c_str(), "rr", &opt) != 0) {
-            LOG(ERROR) << "Fail to init channel to consul at " << FLAGS_consul_agent_addr;
+        std::string consul_agent_addr = GetConsulAddr();
+        if (_channel.Init(consul_agent_addr.c_str(), "rr", &opt) != 0) {
+            LOG(ERROR) << "Fail to init channel to consul at "
+                 << consul_agent_addr;
             return DegradeToOtherServiceIfNeeded(service_name, servers);
         }
         _consul_connected = true;
     }
 
     if (_consul_url.empty()) {
-        _consul_url.append(FLAGS_consul_service_discovery_url);
-        _consul_url.append(service_name);
-        _consul_url.append(FLAGS_consul_url_parameter);
+        std::string consul_url_parameter;
+        char* my_host_ip = getenv("MY_HOST_IP");
+        char* byted_host_ip = getenv("BYTED_HOST_IP");
+        char* my_host_ipv6 = getenv("MY_HOST_IPV6");
+        char* byted_host_ipv6 = getenv("BYTED_HOST_IPV6");
+        bool is_ipv4 = (my_host_ip != NULL && strlen(my_host_ip) > 0) || (byted_host_ip != NULL && strlen(byted_host_ip) > 0);
+        bool is_ipv6 = (my_host_ipv6 != NULL && strlen(my_host_ipv6) > 0) || (byted_host_ipv6 != NULL && strlen(byted_host_ipv6) > 0);
+        if (is_ipv4 && is_ipv6) {
+           consul_url_parameter = "&addr-family=dual-stack&unique=v6";
+        } else if (is_ipv6) {
+           consul_url_parameter = "&addr-family=v6";
+        } else {
+           consul_url_parameter = "&addr-family=v4";
+        }
+
+        _consul_url.append(FLAGS_consul_service_discovery_url)
+               .append("?name=")
+               .append(service_name)
+               .append(consul_url_parameter);
     }
 
     servers->clear();
     std::string consul_url(_consul_url);
-    if (!_consul_index.empty()) {
-        butil::string_appendf(&consul_url, "&index=%s&wait=%ds", _consul_index.c_str(),
-                              FLAGS_consul_blocking_query_wait_secs);
-    }
 
     Controller cntl;
     cntl.http_request().uri() = consul_url;
@@ -108,19 +165,6 @@ int ConsulNamingService::GetServers(const char* service_name,
         LOG(ERROR) << "Fail to access " << consul_url << ": "
                    << cntl.ErrorText();
         return DegradeToOtherServiceIfNeeded(service_name, servers);
-    }
-
-    const std::string* index = cntl.http_response().GetHeader(kConsulIndex);
-    if (index != nullptr) {
-        if (*index == _consul_index) {
-            LOG_EVERY_N(INFO, 100) << "There is no service changed for the list of "
-                                    << service_name
-                                    << ", consul_index: " << _consul_index;
-            return -1;
-        }
-    } else {
-        LOG(ERROR) << "Failed to parse consul index of " << service_name << ".";
-        return -1;
     }
 
     // Sort/unique the inserted vector is faster, but may have a different order
@@ -137,55 +181,53 @@ int ConsulNamingService::GetServers(const char* service_name,
     }
 
     for (BUTIL_RAPIDJSON_NAMESPACE::SizeType i = 0; i < services.Size(); ++i) {
-        auto itr_service = services[i].FindMember("Service");
-        if (itr_service == services[i].MemberEnd()) {
-            LOG(ERROR) << "No service info in node: "
+        auto itr_host = services[i].FindMember("Host");
+        if (itr_host == services[i].MemberEnd() || !itr_host->value.IsString()) {
+            LOG(ERROR) << "No host info in node: "
                        << RapidjsonValueToString(services[i]);
             continue;
         }
 
-        const BUTIL_RAPIDJSON_NAMESPACE::Value& service = itr_service->value;
-        auto itr_address = service.FindMember("Address");
-        auto itr_port = service.FindMember("Port");
-        if (itr_address == service.MemberEnd() ||
-            !itr_address->value.IsString() ||
-            itr_port == service.MemberEnd() ||
-            !itr_port->value.IsUint()) {
-            LOG(ERROR) << "Service with no valid address or port: "
-                       << RapidjsonValueToString(service);
+        auto itr_port = services[i].FindMember("Port");
+        if (itr_port == services[i].MemberEnd() || !itr_port->value.IsUint()) {
+            LOG(ERROR) << "No port info in node: "
+                       << RapidjsonValueToString(services[i]);
             continue;
         }
 
         butil::EndPoint end_point;
-        if (str2endpoint(service["Address"].GetString(),
-                         service["Port"].GetUint(),
+        std::string formated_host = addBracketsIfIpv6(services[i]["Host"].GetString());
+        if (str2endpoint(formated_host.c_str(),
+                         services[i]["Port"].GetUint(),
                          &end_point) != 0) {
             LOG(ERROR) << "Service with illegal address or port: "
-                       << RapidjsonValueToString(service);
+                       << RapidjsonValueToString(services[i]);
             continue;
         }
 
         ServerNode node;
         node.addr = end_point;
-        auto itr_tags = service.FindMember("Tags");
-        if (itr_tags != service.MemberEnd()) {
-            if (itr_tags->value.IsArray()) {
-                if (itr_tags->value.Size() > 0) {
-                    // Tags in consul is an array, here we only use the first one.
-                    const BUTIL_RAPIDJSON_NAMESPACE::Value& tag = itr_tags->value[0];
-                    if (tag.IsString()) {
-                        node.tag = tag.GetString();
-                    } else {
-                        LOG(ERROR) << "First tag returned by consul is not string, service: "
-                                   << RapidjsonValueToString(service);
-                        continue;
-                    }
-                }
-            } else {
-                LOG(ERROR) << "Service tags returned by consul is not json array, service: "
-                           << RapidjsonValueToString(service);
+        auto itr_tags = services[i].FindMember("Tags");
+        if (itr_tags == services[i].MemberEnd() || !itr_tags->value.IsObject()) {
+                LOG(ERROR) << "Service tags returned by consul is not object, service: "
+                           << RapidjsonValueToString(services[i]);
                 continue;
-            }
+        } else {
+                std::stringstream ss;
+
+                for (auto itr = itr_tags->value.MemberBegin();
+                     itr != itr_tags->value.MemberEnd(); ++itr) {
+                        std::string tag(itr->name.GetString());
+
+                        tag.append("=").append(itr->value.GetString());
+                        node.tags.push_back(tag);
+                }
+
+                std::sort(node.tags.begin(), node.tags.end());
+                for (auto t : node.tags) {
+                        ss << t << ",";
+                }
+                node.tag = ss.str();
         }
 
         if (presence.insert(node).second) {
@@ -194,8 +236,6 @@ int ConsulNamingService::GetServers(const char* service_name,
             RPC_VLOG << "Duplicated server=" << node;
         }
     }
-
-    _consul_index = *index;
 
     if (servers->empty() && !services.Empty()) {
         LOG(ERROR) << "All service about " << service_name
@@ -231,7 +271,7 @@ int ConsulNamingService::RunNamingService(const char* service_name,
                 servers.clear();
                 actions->ResetServers(servers);
             }
-            if (bthread_usleep(std::max(FLAGS_consul_retry_interval_ms, 1) * butil::Time::kMicrosecondsPerMillisecond) < 0) {
+            if (bthread_usleep(std::max(FLAGS_consul_retry_interval_ms, 1) * butil::Time::kMillisecondsPerSecond) < 0) {
                 if (errno == ESTOP) {
                     RPC_VLOG << "Quit NamingServiceThread=" << bthread_self();
                     return 0;
@@ -239,6 +279,14 @@ int ConsulNamingService::RunNamingService(const char* service_name,
                 PLOG(FATAL) << "Fail to sleep";
                 return -1;
             }
+        }
+        if (bthread_usleep(FLAGS_consul_polling_interval_secs * butil::Time::kMicrosecondsPerSecond) < 0) {
+            if (errno == ESTOP) {
+                RPC_VLOG << "Quit NamingServiceThread=" << bthread_self();
+                return 0;
+            }
+            PLOG(FATAL) << "Fail to sleep";
+            return -1;
         }
     }
     CHECK(false);

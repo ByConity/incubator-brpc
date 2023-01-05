@@ -106,7 +106,8 @@ ParseResult ParseStreamingMessage(butil::IOBuf* source,
         if (Socket::Address((SocketId)fm.stream_id(), &ptr) != 0) {
             RPC_VLOG_IF(fm.frame_type() != FRAME_TYPE_RST 
                             && fm.frame_type() != FRAME_TYPE_CLOSE
-                            && fm.frame_type() != FRAME_TYPE_FEEDBACK)
+                            && fm.frame_type() != FRAME_TYPE_FEEDBACK
+                            && fm.frame_type() != FRAME_TYPE_FIN)
                    << "Fail to find stream=" << fm.stream_id();
             // It's normal that the stream is closed before receiving feedback frames from peer.
             // In this case, RST frame should not be sent to peer, otherwise on-fly data can be lost.

@@ -35,7 +35,11 @@
 namespace brpc {
 
 // Defined in span.cpp
+#ifdef WITH_LEVELDB
 bool has_span_db();
+#else
+static bool has_span_db() { return false; }
+#endif
 
 DEFINE_bool(enable_rpcz, false, "Turn on rpcz");
 BRPC_VALIDATE_GFLAG(enable_rpcz, PassValidate);

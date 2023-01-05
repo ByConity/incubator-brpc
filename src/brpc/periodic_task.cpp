@@ -44,6 +44,10 @@ static void RunPeriodicTaskThread(void* arg) {
         LOG(ERROR) << "Fail to start PeriodicTaskThread";
         static_cast<PeriodicTask*>(arg)->OnDestroyingTask();
         return;
+#ifdef BRPC_USE_PTHREAD_ONLY
+    } else {
+        pthread_detach(th);
+#endif
     }
 }
 

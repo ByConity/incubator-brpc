@@ -169,7 +169,11 @@ public:
         , _versioned_ref(0)  // join() depends on even version
         , _high_priority_tasks(0)
     {
+#if defined(THREAD_SANITIZER)
+        _join_butex = butex_create_checked<int>();
+#else
         _join_butex = butex_create_checked<butil::atomic<int> >();
+#endif
         _join_butex->store(0, butil::memory_order_relaxed);
     }
 

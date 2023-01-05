@@ -27,8 +27,13 @@
 
 namespace brpc {
 
+#ifdef WITH_LEVELDB
 bool CanAnnotateSpan();
 void AnnotateSpan(const char* fmt, ...);
+#else
+static inline bool CanAnnotateSpan() {return false;}
+static inline void AnnotateSpan(const char* fmt, ...) {}
+#endif
 
 } // namespace brpc
 

@@ -53,7 +53,11 @@ public:
     int timed_wait(const timespec& duetime);
 
 private:
+#if defined(THREAD_SANITIZER)
+    butil::atomic<int> *_butex;
+#else
     int *_butex;
+#endif
     bool _wait_was_invoked;
 };
 

@@ -1204,6 +1204,7 @@ int Server::Join() {
         // still-running bthreads (created by the server). The memory is
         // leaked but servers are unlikely to be started/stopped frequently,
         // the leak is acceptable in most scenarios.
+        delete _keytable_pool;
         _keytable_pool = NULL;
     }
 
@@ -1902,6 +1903,7 @@ int Server::AddCertificate(const CertInfo& cert) {
         LOG(ERROR) << "ServerOptions.ssl_options is not configured yet";
         return -1;
     }
+#ifndef NO_SSL
     std::string cert_key(cert.certificate);
     cert_key.append(cert.private_key);
     if (_ssl_ctx_map.seek(cert_key) != NULL) {
@@ -1930,6 +1932,10 @@ int Server::AddCertificate(const CertInfo& cert) {
     }
     _ssl_ctx_map[cert_key] = ssl_ctx;
     return 0;
+#else
+    LOG(ERROR) << "Macro NO_SSL is defined!";
+    return -1;
+#endif
 }
 
 bool Server::AddCertMapping(CertMaps& bg, const SSLContext& ssl_ctx) {
@@ -2012,7 +2018,7 @@ int Server::ResetCertificates(const std::vector<CertInfo>& certs) {
         LOG(ERROR) << "ServerOptions.ssl_options is not configured yet";
         return -1;
     }
-
+#ifndef NO_SSL
     SSLContextMap tmp_map;
     if (tmp_map.init(INITIAL_CERT_MAP) != 0) {
         LOG(ERROR) << "Fail to initialize tmp_map";
@@ -2042,7 +2048,6 @@ int Server::ResetCertificates(const std::vector<CertInfo>& certs) {
         if (ssl_ctx.ctx->raw_ctx == NULL) {
             return -1;
         }
-
 #ifdef SSL_CTRL_SET_TLSEXT_HOSTNAME
         SSL_CTX_set_tlsext_servername_callback(ssl_ctx.ctx->raw_ctx, SSLSwitchCTXByHostname);
         SSL_CTX_set_tlsext_servername_arg(ssl_ctx.ctx->raw_ctx, this);
@@ -2056,6 +2061,10 @@ int Server::ResetCertificates(const std::vector<CertInfo>& certs) {
 
     _ssl_ctx_map.swap(tmp_map);
     return 0;
+#else
+    LOG(ERROR) << "Macro NO_SSL is defined!";
+    return -1;
+#endif
 }
 
 bool Server::ResetCertMappings(CertMaps& bg, const SSLContextMap& ctx_map) {
@@ -2105,6 +2114,7 @@ bool Server::ClearCertMapping(CertMaps& bg) {
     bg.wildcard_cert_map.clear();
     return true;
 }
+
 
 int Server::ResetMaxConcurrency(int max_concurrency) {
     if (!IsRunning()) {

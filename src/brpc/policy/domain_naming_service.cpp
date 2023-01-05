@@ -39,6 +39,17 @@ int DomainNamingService::GetServers(const char* dns_name,
         LOG(ERROR) << "dns_name is NULL";
         return -1;
     }
+    
+    // IPv6 IP case
+    if (dns_name[0] == '[') {
+        butil::EndPoint point;
+        if (str2endpoint(dns_name, &point) != 0) {
+            LOG(ERROR) << "Invalid IPv6 address= " << dns_name << '\'';
+            return -1;
+        }
+        servers->push_back(ServerNode(point, std::string()));
+        return 0;
+    }
 
     // Should be enough to hold host name
     char buf[128];

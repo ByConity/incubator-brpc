@@ -207,6 +207,7 @@ static DH* SSLGetDHCallback(SSL* ssl, int exp, int keylen) {
 }
 #endif  // OPENSSL_NO_DH
 
+#ifndef NO_SSL
 void ExtractHostnames(X509* x, std::vector<std::string>* hostnames) {
 #ifdef SSL_CTRL_SET_TLSEXT_HOSTNAME
     STACK_OF(GENERAL_NAME)* names = (STACK_OF(GENERAL_NAME)*)
@@ -242,6 +243,7 @@ void ExtractHostnames(X509* x, std::vector<std::string>* hostnames) {
         }
     }
 }
+#endif
 
 struct FreeSSL {
     inline void operator()(SSL* ssl) const {
@@ -259,6 +261,7 @@ struct FreeBIO {
     }
 };
 
+#ifndef NO_SSL
 struct FreeX509 {
     inline void operator()(X509* x) const {
         if (x != NULL) {
@@ -266,6 +269,7 @@ struct FreeX509 {
         }
     }
 };
+#endif
 
 struct FreeEVPKEY {
     inline void operator()(EVP_PKEY* k) const {
@@ -275,6 +279,7 @@ struct FreeEVPKEY {
     }
 };
 
+#ifndef NO_SSL
 static int LoadCertificate(SSL_CTX* ctx,
                            const std::string& certificate,
                            const std::string& private_key,
@@ -440,6 +445,7 @@ static int SetSSLOptions(SSL_CTX* ctx, const std::string& ciphers,
 
     return 0;
 }
+#endif
 
 SSL_CTX* CreateClientSSLContext(const ChannelSSLOptions& options) {
     std::unique_ptr<SSL_CTX, FreeSSLCTX> ssl_ctx(
@@ -449,6 +455,7 @@ SSL_CTX* CreateClientSSLContext(const ChannelSSLOptions& options) {
         return NULL;
     }
 
+#ifndef NO_SSL
     if (!options.client_cert.certificate.empty()
         && LoadCertificate(ssl_ctx.get(),
                            options.client_cert.certificate,
@@ -464,6 +471,7 @@ SSL_CTX* CreateClientSSLContext(const ChannelSSLOptions& options) {
     }
 
     SSL_CTX_set_session_cache_mode(ssl_ctx.get(), SSL_SESS_CACHE_CLIENT);
+#endif
     return ssl_ctx.release();
 }
 
@@ -477,12 +485,11 @@ SSL_CTX* CreateServerSSLContext(const std::string& certificate,
         LOG(ERROR) << "Fail to new SSL_CTX: " << SSLError(ERR_get_error());
         return NULL;
     }
-
+#ifndef NO_SSL
     if (LoadCertificate(ssl_ctx.get(), certificate,
                         private_key, hostnames) != 0) {
         return NULL;
     }
-
     int protocols = TLSv1 | TLSv1_1 | TLSv1_2;
     if (!options.disable_ssl3) {
         protocols |= SSLv3;
@@ -518,6 +525,7 @@ SSL_CTX* CreateServerSSLContext(const std::string& certificate,
     SSL_CTX_set_tmp_ecdh(ssl_ctx.get(), ecdh);
     EC_KEY_free(ecdh);
 #endif
+#endif // NO_SSL
 
 #endif  // OPENSSL_NO_DH
 
@@ -550,6 +558,7 @@ SSL* CreateSSLSession(SSL_CTX* ctx, SocketId id, int fd, bool server_mode) {
 }
 
 void AddBIOBuffer(SSL* ssl, int fd, int bufsize) {
+#ifndef NO_SSL
     BIO* rbio = BIO_new(BIO_f_buffer());
     BIO_set_buffer_size(rbio, bufsize);
     BIO* rfd = BIO_new(BIO_s_fd());
@@ -562,6 +571,7 @@ void AddBIOBuffer(SSL* ssl, int fd, int bufsize) {
     BIO_set_fd(wfd, fd, 0);
     wbio = BIO_push(wbio, wfd);
     SSL_set_bio(ssl, rbio, wbio);
+#endif
 }
 
 SSLState DetectSSLState(int fd, int* error_code) {
@@ -656,6 +666,7 @@ int SSLThreadInit() {
 #ifndef OPENSSL_NO_DH
 
 static DH* SSLGetDH1024() {
+#ifndef NO_SSL
     BIGNUM* p = get_rfc2409_prime_1024(NULL);
     if (!p) {
         return NULL;
@@ -676,9 +687,14 @@ static DH* SSLGetDH1024() {
     }
     DH_set0_pqg(dh, p, NULL, g);
     return dh;
+#else
+    LOG(ERROR) << "Macro NO_SSL is defined!";
+    return NULL;
+#endif
 }
 
 static DH* SSLGetDH2048() {
+#ifndef NO_SSL
     BIGNUM* p = get_rfc3526_prime_2048(NULL);
     if (!p) {
         return NULL;
@@ -699,9 +715,14 @@ static DH* SSLGetDH2048() {
     }
     DH_set0_pqg(dh, p, NULL, g);
     return dh;
+#else
+    LOG(ERROR) << "Macro NO_SSL is defined!";
+    return NULL;
+#endif
 }
 
 static DH* SSLGetDH4096() {
+#ifndef NO_SSL
     BIGNUM* p = get_rfc3526_prime_4096(NULL);
     if (!p) {
         return NULL;
@@ -722,9 +743,14 @@ static DH* SSLGetDH4096() {
     }
     DH_set0_pqg(dh, p, NULL, g);
     return dh;
+#else
+    LOG(ERROR) << "Macro NO_SSL is defined!";
+    return NULL;
+#endif
 }
 
 static DH* SSLGetDH8192() {
+#ifndef NO_SSL
     BIGNUM* p = get_rfc3526_prime_8192(NULL);
     if (!p) {
         return NULL;
@@ -745,6 +771,10 @@ static DH* SSLGetDH8192() {
     }
     DH_set0_pqg(dh, p, NULL, g);
     return dh;
+#else
+    LOG(ERROR) << "Macro NO_SSL is defined!";
+    return NULL;
+#endif
 }
 
 #endif  // OPENSSL_NO_DH
@@ -787,7 +817,8 @@ static std::string GetNextLevelSeparator(const char* sep) {
 }
 
 void Print(std::ostream& os, SSL* ssl, const char* sep) {
-    os << "cipher=" << SSL_get_cipher(ssl) << sep
+#ifndef NO_SSL
+  os << "cipher=" << SSL_get_cipher(ssl) << sep
        << "protocol=" << SSL_get_version(ssl) << sep
        << "verify=" << (SSL_get_verify_mode(ssl) & SSL_VERIFY_PEER
                         ? "success" : "none");
@@ -804,9 +835,11 @@ void Print(std::ostream& os, SSL* ssl, const char* sep) {
         }
         os << '}';
     }
+#endif
 }
 
 void Print(std::ostream& os, X509* cert, const char* sep) {
+#ifndef NO_SSL
     BIO* buf = BIO_new(BIO_s_mem());
     if (buf == NULL) {
         return;
@@ -831,8 +864,10 @@ void Print(std::ostream& os, X509* cert, const char* sep) {
     char* bufp = NULL;
     int len = BIO_get_mem_data(buf, &bufp);
     os << butil::StringPiece(bufp, len);
+#endif
 }
-
 } // namespace brpc
+
+
 
 #endif // USE_MESALINK

@@ -468,7 +468,11 @@ Socket::Socket(Forbidden)
 {
     CreateVarsOnce();
     pthread_mutex_init(&_id_wait_list_mutex, NULL);
+#if defined(THREAD_SANITIZER)
+    _epollout_butex = bthread::butex_create_checked<int>();
+#else
     _epollout_butex = bthread::butex_create_checked<butil::atomic<int> >();
+#endif
 }
 
 Socket::~Socket() {
@@ -1398,6 +1402,10 @@ void Socket::AfterAppConnected(int err, void* data) {
                 &th, &BTHREAD_ATTR_NORMAL, KeepWrite, req) != 0) {
             PLOG(WARNING) << "Fail to start KeepWrite";
             KeepWrite(req);
+#ifdef BRPC_USE_PTHREAD_ONLY
+        } else {
+            pthread_detach(th);
+#endif
         }
     } else {
         SocketUniquePtr s(req->socket);
@@ -1437,6 +1445,9 @@ int Socket::KeepWriteIfConnected(int fd, int err, void* data) {
             Socket::CheckConnectedAndKeepWrite, fd, err, data);
         if ((err = bthread_start_background(&th, &BTHREAD_ATTR_NORMAL,
                                             RunClosure, thrd_func)) == 0) {
+#ifdef BRPC_USE_PTHREAD_ONLY
+            pthread_detach(th);
+#endif
             return 0;
         } else {
             PLOG(ERROR) << "Fail to start bthread";
@@ -1668,6 +1679,10 @@ KEEPWRITE_IN_BACKGROUND:
                                  KeepWrite, req) != 0) {
         LOG(FATAL) << "Fail to start KeepWrite";
         KeepWrite(req);
+#ifdef BRPC_USE_PTHREAD_ONLY
+    } else {
+        pthread_detach(th);
+#endif
     }
     return 0;
 
@@ -1857,6 +1872,7 @@ int Socket::SSLHandshake(int fd, bool server_mode) {
         return 0;
     }
 
+    #ifndef NO_SSL
     // TODO: Reuse ssl session id for client
     if (_ssl_session) {
         // Free the last session, which may be deprecated when socket failed
@@ -1924,6 +1940,10 @@ int Socket::SSLHandshake(int fd, bool server_mode) {
         }
         }
     }
+    #else
+        LOG(ERROR) << "Macro NO_SSL is defined!";
+        return -1;
+    #endif
 }
 
 ssize_t Socket::DoRead(size_t size_hint) {
@@ -2084,6 +2104,10 @@ int Socket::StartInputEvent(SocketId id, uint32_t events,
         if (bthread_start_urgent(&tid, &attr, ProcessEvent, p) != 0) {
             LOG(FATAL) << "Fail to start ProcessEvent";
             ProcessEvent(p);
+#ifdef BRPC_USE_PTHREAD_ONLY
+        } else {
+            pthread_detach(tid);
+#endif
         }
     }
     return 0;

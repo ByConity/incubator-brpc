@@ -26,6 +26,9 @@ include_directories(${PROJECT_SOURCE_DIR}/src)
 add_library(BUTIL_LIB OBJECT ${BUTIL_SOURCES})
 add_library(SOURCES_LIB OBJECT ${SOURCES})
 add_dependencies(SOURCES_LIB PROTO_LIB)
+target_link_libraries(SOURCES_LIB ${ZLIB_LIBRARIES})
+target_compile_definitions(SOURCES_LIB PRIVATE NO_SSL)
+target_compile_definitions(BUTIL_LIB PRIVATE NO_SSL)
 
 # shared library needs POSITION_INDEPENDENT_CODE
 set_property(TARGET ${SOURCES_LIB} PROPERTY POSITION_INDEPENDENT_CODE 1)
@@ -70,8 +73,11 @@ if(BUILD_SHARED_LIBS)
             LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
             ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
             )
+    target_include_directories(brpc-shared SYSTEM PUBLIC ${GFLAGS_INCLUDE_PATH} INTERFACE ${PROJECT_BINARY_DIR}/output/include)
 else()
     target_link_libraries(protoc-gen-mcpack brpc-static ${DYNAMIC_LIB} pthread)
+    target_link_libraries(brpc-static PUBLIC ${GFLAGS_LIBRARY})
+    target_include_directories(brpc-static SYSTEM PUBLIC ${GFLAGS_INCLUDE_PATH} INTERFACE ${PROJECT_BINARY_DIR}/output/include)
 endif()
 
 
