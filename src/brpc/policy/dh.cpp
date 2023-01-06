@@ -1,3 +1,9 @@
+
+/*
+ * This file may have been modified by ByteDance Ltd. (“ Bytedance's Modifications”).
+ * All Bytedance's Modifications are Copyright (2022) ByteDance Ltd..
+ */
+
 // [ Modified from code in SRS2 (src/protocol/srs_rtmp_handshake.cpp:140) ]
 // The MIT License (MIT)
 // Copyright (c) 2013-2015 SRS(ossrs)

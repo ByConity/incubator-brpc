@@ -1,3 +1,9 @@
+
+/*
+ * This file may have been modified by ByteDance Ltd. (“ Bytedance's Modifications”).
+ * All Bytedance's Modifications are Copyright (2022) ByteDance Ltd..
+ */
+
 // Copyright (c) 2009 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.

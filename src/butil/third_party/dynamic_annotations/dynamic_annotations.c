@@ -1,3 +1,9 @@
+
+/*
+ * This file may have been modified by ByteDance Ltd. (“ Bytedance's Modifications”).
+ * All Bytedance's Modifications are Copyright (2022) ByteDance Ltd..
+ */
+
 /* Copyright (c) 2011, Google Inc.
  * All rights reserved.
  *
