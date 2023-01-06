@@ -42,9 +42,14 @@ namespace bthread {
 void* butex_create();
 
 // Check width of user type before casting.
+#if defined(THREAD_SANITIZER)
+template <typename T> butil::atomic<T>* butex_create_checked() {
+    return static_cast<butil::atomic<T>*>(butex_create());
+#else
 template <typename T> T* butex_create_checked() {
     BAIDU_CASSERT(sizeof(T) == sizeof(int), sizeof_T_must_equal_int);
     return static_cast<T*>(butex_create());
+#endif
 }
 
 // Destroy the butex.

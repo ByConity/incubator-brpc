@@ -104,7 +104,11 @@ public:
     // To support cache-aligned objects, align Block.items by cacheline.
     struct BAIDU_CACHELINE_ALIGNMENT Block {
         char items[sizeof(T) * BLOCK_NITEM];
+#if defined(THREAD_SANITIZER)
+        std::atomic<size_t> nitem;
+#else
         size_t nitem;
+#endif
 
         Block() : nitem(0) {}
     };
@@ -459,9 +463,11 @@ private:
     bool pop_free_chunk(FreeChunk& c) {
         // Critical for the case that most return_object are called in
         // different threads of get_object.
+#if !defined(THREAD_SANITIZER) && !defined(__SANITIZE_THREAD__)
         if (_free_chunks.empty()) {
             return false;
         }
+#endif
         pthread_mutex_lock(&_free_chunks_mutex);
         if (_free_chunks.empty()) {
             pthread_mutex_unlock(&_free_chunks_mutex);

@@ -50,8 +50,11 @@ public:
                                      butil::IOBuf *const messages[], 
                                      size_t size) = 0;
     virtual void on_idle_timeout(StreamId id) = 0;
-    virtual void on_closed(StreamId id) = 0; 
+    virtual void on_closed(StreamId id) = 0;
+    virtual void on_finished(StreamId id, int32_t finish_status_code) = 0;
 };
+
+typedef std::shared_ptr<StreamInputHandler> StreamInputHandlerSharedPtr;
 
 struct StreamOptions {
     StreamOptions()
@@ -85,7 +88,7 @@ struct StreamOptions {
     // Handle input message, if handler is NULL, the remote side is not allowd to
     // write any message, who will get EBADF on writting
     // default: NULL
-    StreamInputHandler* handler;
+    StreamInputHandlerSharedPtr handler;
 };
 
 // [Called at the client side]
@@ -133,6 +136,10 @@ void StreamWait(StreamId stream_id, const timespec *due_time,
 //    been received
 // This function could be called multiple times without side-effects
 int StreamClose(StreamId stream_id);
+
+int StreamFinish(StreamId stream_id, int32_t &actual_fin_code, int32_t expected_fin_code, bool finish_remote_stream);
+
+int StreamFinishedCode(StreamId stream_id, int32_t& fin_status_code);
 
 namespace detail {
 

@@ -93,7 +93,11 @@ private:
     int _epfd;
 
     // false unless Stop() is called.
+#if defined(THREAD_SANITIZER)
+    std::atomic<bool> _stop;
+#else
     volatile bool _stop;
+#endif
 
     // identifier of hosting bthread
     bthread_t _tid;

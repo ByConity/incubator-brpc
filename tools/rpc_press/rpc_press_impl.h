@@ -29,6 +29,7 @@
 #include <google/protobuf/compiler/importer.h>
 #include <google/protobuf/dynamic_message.h>
 #include <bvar/bvar.h>
+#include <bvar/latency_recorder.h>
 #include <brpc/channel.h>
 #include "info_thread.h"
 #include "pb_util.h"

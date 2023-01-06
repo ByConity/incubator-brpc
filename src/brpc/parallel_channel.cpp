@@ -297,6 +297,10 @@ public:
             if (bthread_start_background(&bh, &attr, RunOnComplete, this) != 0) {
                 LOG(FATAL) << "Fail to start bthread";
                 OnComplete();
+#ifdef BRPC_USE_PTHREAD_ONLY
+            } else {
+                pthread_detach(bh);
+#endif
             }
         } else {
             OnComplete();
@@ -717,6 +721,9 @@ FAIL:
             // Hack: save done in cntl->_done to remove a malloc of args.
             cntl->_done = done;
             if (bthread_start_background(&bh, &attr, RunDoneAndDestroy, cntl) == 0) {
+#ifdef BRPC_USE_PTHREAD_ONLY
+                pthread_detach(bh);
+#endif
                 return;
             }
             cntl->_done = NULL;

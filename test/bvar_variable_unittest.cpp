@@ -33,6 +33,7 @@
 #include "butil/macros.h"
 
 #include "bvar/bvar.h"
+#include "bvar/latency_recorder.h"
 
 #include <gflags/gflags.h>
 #include <gtest/gtest.h>
@@ -374,6 +375,74 @@ TEST_F(VariableTest, latency_recorder) {
     ASSERT_EQ("ba_na_na_latency_percentiles", names[8]);
     ASSERT_EQ("ba_na_na_max_latency", names[9]);
     ASSERT_EQ("ba_na_na_qps", names[10]);
+}
+
+TEST_F(VariableTest, latency_histogram_recorder) {
+    bvar::LatencyHistogramRecorder rec;
+    rec << 1 << 2 << 3;
+    ASSERT_EQ(3, rec.count());
+    ASSERT_EQ(-1, rec.expose(""));
+    ASSERT_EQ(-1, rec.expose("latency"));
+    ASSERT_EQ(-1, rec.expose("Latency"));
+
+
+    ASSERT_EQ(0, rec.expose("FooBar__latency"));
+    std::vector<std::string> names;
+    bvar::Variable::list_exposed(&names);
+    std::sort(names.begin(), names.end());
+    ASSERT_EQ(14UL, names.size()) << vec2string(names);
+    ASSERT_EQ("foo_bar_count", names[0]);
+    ASSERT_EQ("foo_bar_latency", names[1]);
+    ASSERT_EQ("foo_bar_latency_bucket_0", names[2]);
+    ASSERT_EQ("foo_bar_latency_bucket_1", names[3]);
+    ASSERT_EQ("foo_bar_latency_bucket_2", names[4]);
+    ASSERT_EQ("foo_bar_latency_bucket_3", names[5]);
+    ASSERT_EQ("foo_bar_latency_bucket_4", names[6]);
+    ASSERT_EQ("foo_bar_latency_bucket_5", names[7]);
+    ASSERT_EQ("foo_bar_latency_bucket_6", names[8]);
+    ASSERT_EQ("foo_bar_latency_bucket_7", names[9]);
+    ASSERT_EQ("foo_bar_latency_bucket_8", names[10]);
+    ASSERT_EQ("foo_bar_latency_bucket_9", names[11]);
+    ASSERT_EQ("foo_bar_max_latency", names[12]);
+    ASSERT_EQ("foo_bar_qps", names[13]);
+
+    ASSERT_EQ(0, rec.expose("ApplePie"));
+    bvar::Variable::list_exposed(&names);
+    std::sort(names.begin(), names.end());
+    ASSERT_EQ(14UL, names.size());
+    ASSERT_EQ("apple_pie_count", names[0]);
+    ASSERT_EQ("apple_pie_latency", names[1]);
+    ASSERT_EQ("apple_pie_latency_bucket_0", names[2]);
+    ASSERT_EQ("apple_pie_latency_bucket_1", names[3]);
+    ASSERT_EQ("apple_pie_latency_bucket_2", names[4]);
+    ASSERT_EQ("apple_pie_latency_bucket_3", names[5]);
+    ASSERT_EQ("apple_pie_latency_bucket_4", names[6]);
+    ASSERT_EQ("apple_pie_latency_bucket_5", names[7]);
+    ASSERT_EQ("apple_pie_latency_bucket_6", names[8]);
+    ASSERT_EQ("apple_pie_latency_bucket_7", names[9]);
+    ASSERT_EQ("apple_pie_latency_bucket_8", names[10]);
+    ASSERT_EQ("apple_pie_latency_bucket_9", names[11]);
+    ASSERT_EQ("apple_pie_max_latency", names[12]);
+    ASSERT_EQ("apple_pie_qps", names[13]);
+
+    ASSERT_EQ(0, rec.expose("BaNaNa::Latency"));
+    bvar::Variable::list_exposed(&names);
+    std::sort(names.begin(), names.end());
+    ASSERT_EQ(14UL, names.size());
+    ASSERT_EQ("ba_na_na_count", names[0]);
+    ASSERT_EQ("ba_na_na_latency", names[1]);
+    ASSERT_EQ("ba_na_na_latency_bucket_0", names[2]);
+    ASSERT_EQ("ba_na_na_latency_bucket_1", names[3]);
+    ASSERT_EQ("ba_na_na_latency_bucket_2", names[4]);
+    ASSERT_EQ("ba_na_na_latency_bucket_3", names[5]);
+    ASSERT_EQ("ba_na_na_latency_bucket_4", names[6]);
+    ASSERT_EQ("ba_na_na_latency_bucket_5", names[7]);
+    ASSERT_EQ("ba_na_na_latency_bucket_6", names[8]);
+    ASSERT_EQ("ba_na_na_latency_bucket_7", names[9]);
+    ASSERT_EQ("ba_na_na_latency_bucket_8", names[10]);
+    ASSERT_EQ("ba_na_na_latency_bucket_9", names[11]);
+    ASSERT_EQ("ba_na_na_max_latency", names[12]);
+    ASSERT_EQ("ba_na_na_qps", names[13]);
 }
 
 TEST_F(VariableTest, recursive_mutex) {

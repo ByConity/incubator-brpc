@@ -125,8 +125,13 @@ struct BAIDU_CACHELINE_ALIGNMENT Id {
     int (*on_error)(bthread_id_t, void*, int);
     int (*on_error2)(bthread_id_t, void*, int, const std::string&);
     const char *lock_location;
+#if defined(THREAD_SANITIZER)
+    butil::atomic<uint32_t>* butex;
+    butil::atomic<uint32_t>* join_butex;
+#else
     uint32_t* butex;
     uint32_t* join_butex;
+#endif
     SmallQueue<PendingError, 2> pending_q;
     
     Id() {
@@ -143,6 +148,7 @@ struct BAIDU_CACHELINE_ALIGNMENT Id {
         bthread::butex_destroy(join_butex);
     }
 
+__attribute__((no_sanitize("thread")))
     inline bool has_version(uint32_t id_ver) const {
         return id_ver >= first_ver && id_ver < locked_ver;
     }
@@ -205,7 +211,7 @@ void id_status(bthread_id_t id, std::ostream &os) {
         return;
     }
     const uint32_t id_ver = bthread::get_version(id);
-    uint32_t* butex = meta->butex;
+    auto butex = meta->butex;
     bool valid = true;
     void* data = NULL;
     int (*on_error)(bthread_id_t, void*, int) = NULL;
@@ -338,16 +344,16 @@ static int id_create_impl(
         meta->on_error = on_error;
         meta->on_error2 = on_error2;
         CHECK(meta->pending_q.empty());
-        uint32_t* butex = meta->butex;
-        if (0 == *butex || *butex + ID_MAX_RANGE + 2 < *butex) {
+        uint32_t val = *meta->butex;
+        if (0 == val || val + ID_MAX_RANGE + 2 < val) {
             // Skip 0 so that bthread_id_t is never 0
             // avoid overflow to make comparisons simpler.
-            *butex = 1;
+            *meta->butex = val = 1;
         }
-        *meta->join_butex = *butex;
-        meta->first_ver = *butex;
-        meta->locked_ver = *butex + 1;
-        *id = make_id(*butex, slot);
+        *meta->join_butex = val;
+        meta->first_ver = val;
+        meta->locked_ver = val + 1;
+        *id = make_id(val, slot);
         return 0;
     }
     return ENOMEM;
@@ -371,16 +377,16 @@ static int id_create_ranged_impl(
         meta->on_error = on_error;
         meta->on_error2 = on_error2;
         CHECK(meta->pending_q.empty());
-        uint32_t* butex = meta->butex;
-        if (0 == *butex || *butex + ID_MAX_RANGE + 2 < *butex) {
+        uint32_t val = *meta->butex;
+        if (0 == val || val + ID_MAX_RANGE + 2 < val) {
             // Skip 0 so that bthread_id_t is never 0
             // avoid overflow to make comparisons simpler.
-            *butex = 1;
+            *meta->butex = val = 1;
         }
-        *meta->join_butex = *butex;
-        meta->first_ver = *butex;
-        meta->locked_ver = *butex + range;
-        *id = make_id(*butex, slot);
+        *meta->join_butex = val;
+        meta->first_ver = val;
+        meta->locked_ver = val + range;
+        *id = make_id(val, slot);
         return 0;
     }
     return ENOMEM;
@@ -414,7 +420,7 @@ int bthread_id_lock_and_reset_range_verbose(
         return EINVAL;
     }
     const uint32_t id_ver = bthread::get_version(id);
-    uint32_t* butex = meta->butex;
+    auto butex = meta->butex;
     bool ever_contended = false;
     meta->mutex.lock();
     while (meta->has_version(id_ver)) {
@@ -470,7 +476,7 @@ int bthread_id_about_to_destroy(bthread_id_t id) {
         return EINVAL;
     }
     const uint32_t id_ver = bthread::get_version(id);
-    uint32_t* butex = meta->butex;
+    auto butex = meta->butex;
     meta->mutex.lock();
     if (!meta->has_version(id_ver)) {
         meta->mutex.unlock();
@@ -496,7 +502,7 @@ int bthread_id_cancel(bthread_id_t id) {
     if (!meta) {
         return EINVAL;
     }
-    uint32_t* butex = meta->butex;
+    auto butex = meta->butex;
     const uint32_t id_ver = bthread::get_version(id);
     meta->mutex.lock();
     if (!meta->has_version(id_ver)) {
@@ -523,7 +529,7 @@ int bthread_id_join(bthread_id_t id) {
         return EINVAL;
     }
     const uint32_t id_ver = bthread::get_version(id);
-    uint32_t* join_butex = meta->join_butex;
+    auto join_butex = meta->join_butex;
     while (1) {
         meta->mutex.lock();
         const bool has_ver = meta->has_version(id_ver);
@@ -545,7 +551,7 @@ int bthread_id_trylock(bthread_id_t id, void** pdata) {
     if (!meta) {
         return EINVAL;
     }
-    uint32_t* butex = meta->butex;
+    auto butex = meta->butex;
     const uint32_t id_ver = bthread::get_version(id);
     meta->mutex.lock();
     if (!meta->has_version(id_ver)) {
@@ -574,7 +580,7 @@ int bthread_id_unlock(bthread_id_t id) {
     if (!meta) {
         return EINVAL;
     }
-    uint32_t* butex = meta->butex;
+    auto butex = meta->butex;
     // Release fence makes sure all changes made before signal visible to
     // woken-up waiters.
     const uint32_t id_ver = bthread::get_version(id);
@@ -616,8 +622,8 @@ int bthread_id_unlock_and_destroy(bthread_id_t id) {
     if (!meta) {
         return EINVAL;
     }
-    uint32_t* butex = meta->butex;
-    uint32_t* join_butex = meta->join_butex;
+    auto butex = meta->butex;
+    auto join_butex = meta->join_butex;
     const uint32_t id_ver = bthread::get_version(id);
     meta->mutex.lock();
     if (!meta->has_version(id_ver)) {
@@ -719,7 +725,7 @@ int bthread_id_error2_verbose(bthread_id_t id, int error_code,
         return EINVAL;
     }
     const uint32_t id_ver = bthread::get_version(id);
-    uint32_t* butex = meta->butex;
+    auto butex = meta->butex;
     meta->mutex.lock();
     if (!meta->has_version(id_ver)) {
         meta->mutex.unlock();

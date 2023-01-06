@@ -190,6 +190,9 @@ static void QueueMessage(InputMessageBase* to_run_msg,
     if (bthread_start_background(
             &th, &tmp, ProcessInputMessage, to_run_msg) == 0) {
         ++*num_bthread_created;
+#ifdef BRPC_USE_PTHREAD_ONLY
+        pthread_detach(th);
+#endif
     } else {
         ProcessInputMessage(to_run_msg);
     }

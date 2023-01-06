@@ -70,7 +70,7 @@ friend class IOBufAsZeroCopyOutputStream;
 friend class IOBufBytesIterator;
 friend class IOBufCutter;
 public:
-    static const size_t DEFAULT_BLOCK_SIZE = 8192;
+    static const size_t BRPC_DEFAULT_BLOCK_SIZE = 8192;
     static const size_t INITIAL_CAP = 32; // must be power of 2
 
     struct Block;
@@ -263,6 +263,8 @@ public:
     // Returns 0 on success, -1 otherwise.
     int resize(size_t n) { return resize(n, '\0'); }
     int resize(size_t n, char c);
+
+    StringPiece expand(size_t hint);
 
     // Reserve `n' uninitialized bytes at back-side.
     // Returns an object representing the reserved area, INVALID_AREA on failure.

@@ -25,6 +25,7 @@
 #define BRPC_SERVER_NODE_H
 
 #include <string>
+#include <vector>
 #include "butil/endpoint.h"
 
 namespace brpc {
@@ -32,7 +33,7 @@ namespace brpc {
 // Representing a server inside a NamingService.
 struct ServerNode {
     ServerNode() {}
-    
+
     explicit ServerNode(const butil::EndPoint& pt) : addr(pt) {}
 
     ServerNode(butil::ip_t ip, int port, const std::string& tag2)
@@ -44,6 +45,7 @@ struct ServerNode {
     ServerNode(butil::ip_t ip, int port) : addr(ip, port) {}
 
     butil::EndPoint addr;
+    std::vector<std::string> tags;
     std::string tag;
 };
 

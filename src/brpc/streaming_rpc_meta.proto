@@ -33,6 +33,7 @@ enum FrameType {
     FRAME_TYPE_CLOSE = 2;
     FRAME_TYPE_DATA = 3;
     FRAME_TYPE_FEEDBACK= 4;
+    FRAME_TYPE_FIN = 5;
 }
 
 message StreamFrameMeta {
@@ -41,6 +42,7 @@ message StreamFrameMeta {
     optional FrameType frame_type = 3;
     optional bool has_continuation = 4;
     optional Feedback feedback = 5;
+    optional int32 fin_status_code = 6;
 }
 
 message Feedback {

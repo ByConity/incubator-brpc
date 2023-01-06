@@ -417,7 +417,11 @@ const LogSeverity BLOG_0 = BLOG_ERROR;
     (::logging::FLAGS_v >= (verbose_level))
 #endif
 
+#if defined(THREAD_SANITIZER)
+#define VLOG_IS_ON(verbose_level) false
+#else
 #define VLOG_IS_ON(verbose_level) BAIDU_VLOG_IS_ON(verbose_level, __FILE__)
+#endif
 
 DECLARE_int32(v);
 

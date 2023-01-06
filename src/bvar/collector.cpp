@@ -65,6 +65,7 @@ public:
     Collector();
     ~Collector();
 
+__attribute__((no_sanitize("thread")))
     int64_t last_active_cpuwide_us() const { return _last_active_cpuwide_us; }
 
     void wakeup_grab_thread();
@@ -91,6 +92,7 @@ private:
         return NULL;
     }
 
+__attribute__((no_sanitize("thread")))
     static int64_t get_pending_count(void* arg) {
         Collector* d = static_cast<Collector*>(arg);
         return d->_ngrab - d->_ndump - d->_ndrop;
@@ -156,6 +158,7 @@ static T deref_value(void* arg) {
 // for limiting samples returning NULL in speed_limit()
 static CollectorSpeedLimit g_null_speed_limit = BVAR_COLLECTOR_SPEED_LIMIT_INITIALIZER;
 
+__attribute__((no_sanitize("thread")))
 void Collector::grab_thread() {
     _last_active_cpuwide_us = butil::cpuwide_time_us();
     int64_t last_before_update_sl = _last_active_cpuwide_us;

@@ -75,7 +75,7 @@ friend class Server;
     std::unique_ptr<ConcurrencyLimiter> _cl;
     butil::atomic<int> _nconcurrency;
     bvar::Adder<int64_t>  _nerror_bvar;
-    bvar::LatencyRecorder _latency_rec;
+    bvar::LatencyHistogramRecorder _latency_rec;
     bvar::PassiveStatus<int>  _nconcurrency_bvar;
     bvar::PerSecond<bvar::Adder<int64_t>> _eps_bvar;
     bvar::PassiveStatus<int32_t> _max_concurrency_bvar;

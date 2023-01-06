@@ -99,7 +99,11 @@ public:
 private:
     internal::FastPthreadMutex _mutex;
     int64_t _nearest_run_time;
+#if defined(THREAD_SANITIZER)
+    std::atomic<Task*> _task_head;
+#else
     Task* _task_head;
+#endif
 };
 
 // Utilies for making and extracting TaskId.
@@ -177,11 +181,17 @@ TimerThread::Task* TimerThread::Bucket::consume_tasks() {
         // We can avoid touching the mutex and related cacheline when the
         // bucket is actually empty.
         BAIDU_SCOPED_LOCK(_mutex);
+#if defined(THREAD_SANITIZER)
+        head = _task_head.exchange(NULL);
+        if (head)
+            _nearest_run_time = std::numeric_limits<int64_t>::max();
+#else
         if (_task_head) {
             head = _task_head;
             _task_head = NULL;
             _nearest_run_time = std::numeric_limits<int64_t>::max();
         }
+#endif
     }
     return head;
 }
@@ -209,8 +219,12 @@ TimerThread::Bucket::schedule(void (*fn)(void*), void* arg,
     bool earlier = false;
     {
         BAIDU_SCOPED_LOCK(_mutex);
+#if defined(THREAD_SANITIZER)
+        task->next = _task_head.exchange(task);
+#else
         task->next = _task_head;
         _task_head = task;
+#endif
         if (task->run_time < _nearest_run_time) {
             _nearest_run_time = task->run_time;
             earlier = true;
@@ -316,6 +330,7 @@ static T deref_value(void* arg) {
     return *(T*)arg;
 }
 
+__attribute__((no_sanitize("thread")))
 void TimerThread::run() {
     run_worker_startfn();
 #ifdef BAIDU_INTERNAL

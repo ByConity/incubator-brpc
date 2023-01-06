@@ -214,7 +214,11 @@ public:
             // It is rare to wait on one file descriptor from multiple threads
             // simultaneously. Creating singleton by optimistic locking here
             // saves mutexes for each butex.
+#if defined(THREAD_SANITIZER)
+            butex = butex_create_checked<int>();
+#else
             butex = butex_create_checked<EpollButex>();
+#endif
             butex->store(0, butil::memory_order_relaxed);
             EpollButex* expected = NULL;
             if (!p->compare_exchange_strong(expected, butex,

@@ -25,6 +25,7 @@
 #include <gflags/gflags.h>
 #include "brpc/errno.pb.h"
 #include "brpc/policy/auto_concurrency_limiter.h"
+#include "butil/fast_rand.h"
 
 namespace bthread {
 

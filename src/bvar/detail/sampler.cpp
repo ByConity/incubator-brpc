@@ -218,6 +218,9 @@ void Sampler::schedule() {
     }
 }
 
+#if defined(THREAD_SANITIZER)
+__attribute__((no_sanitize("thread")))
+#endif
 void Sampler::destroy() {
     _mutex.lock();
     _used = false;

@@ -193,6 +193,7 @@ void Acceptor::Join() {
     }
 }
 
+__attribute__((no_sanitize("thread")))
 size_t Acceptor::ConnectionCount() const {
     // Notice that _socket_map may be modified concurrently. This actually
     // assumes that size() is safe to call concurrently.

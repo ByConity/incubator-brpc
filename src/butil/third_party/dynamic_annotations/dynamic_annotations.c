@@ -261,6 +261,7 @@ static int GetRunningOnValgrind(void) {
 }
 
 /* See the comments in dynamic_annotations.h */
+__attribute__((no_sanitize("thread")))
 int __attribute__((weak)) RunningOnValgrind(void) {
   static volatile int running_on_valgrind = -1;
   /* C doesn't have thread-safe initialization of statics, and we

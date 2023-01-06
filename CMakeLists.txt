@@ -26,8 +26,8 @@ option(WITH_THRIFT "With thrift framed protocol supported" OFF)
 option(WITH_SNAPPY "With snappy" OFF)
 option(WITH_RDMA "With RDMA" OFF)
 option(BUILD_UNIT_TESTS "Whether to build unit tests" OFF)
-option(BUILD_BRPC_TOOLS "Whether to build brpc tools" ON)
-option(DOWNLOAD_GTEST "Download and build a fresh copy of googletest. Requires Internet access." ON)
+option(BUILD_BRPC_TOOLS "Whether to build brpc tools" OFF)
+option(DOWNLOAD_GTEST "Download and build a fresh copy of googletest. Requires Internet access." OFF)
 
 # Enable MACOSX_RPATH. Run "cmake --help-policy CMP0042" for policy details.
 if(POLICY CMP0042)
@@ -80,7 +80,9 @@ configure_file(${PROJECT_SOURCE_DIR}/config.h.in ${PROJECT_SOURCE_DIR}/src/butil
 
 set(CMAKE_MODULE_PATH ${PROJECT_SOURCE_DIR}/cmake)
 
-find_package(GFLAGS REQUIRED)
+if(NOT USE_INTERNAL_GFLAGS_LIBRARY)
+    find_package(GFLAGS REQUIRED)
+endif()
 
 execute_process(
     COMMAND bash -c "grep \"namespace [_A-Za-z0-9]\\+ {\" ${GFLAGS_INCLUDE_PATH}/gflags/gflags_declare.h | head -1 | awk '{print $2}' | tr -d '\n'"
@@ -113,13 +115,29 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Darwin")
 endif()
 
 set(CMAKE_CPP_FLAGS "${CMAKE_CPP_FLAGS} ${DEFINE_CLOCK_GETTIME} -DBRPC_WITH_GLOG=${WITH_GLOG_VAL} -DBRPC_WITH_RDMA=${WITH_RDMA_VAL} -DGFLAGS_NS=${GFLAGS_NS}")
+
+if (SANITIZE STREQUAL "thread")
+    set(CMAKE_CPP_FLAGS "${CMAKE_CPP_FLAGS} -DTHREAD_SANITIZER")
+    if(CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
+        set(CMAKE_CPP_FLAGS "${CMAKE_CPP_FLAGS} -mllvm -tsan-instrument-memory-accesses=false")
+    endif()
+endif()
+
+if (SANITIZE STREQUAL "memory")
+    set(CMAKE_CPP_FLAGS "${CMAKE_CPP_FLAGS} -DMEMORY_SANITIZER")
+endif()
+
+if (SANITIZE STREQUAL "address")
+    set(CMAKE_CPP_FLAGS "${CMAKE_CPP_FLAGS} -DADDRESS_SANITIZER")
+endif()
+
 if(WITH_MESALINK)
     set(CMAKE_CPP_FLAGS "${CMAKE_CPP_FLAGS} -DUSE_MESALINK")
 endif()
 set(CMAKE_CPP_FLAGS "${CMAKE_CPP_FLAGS} -DBTHREAD_USE_FAST_PTHREAD_MUTEX -D__const__=__unused__ -D_GNU_SOURCE -DUSE_SYMBOLIZE -DNO_TCMALLOC -D__STDC_FORMAT_MACROS -D__STDC_LIMIT_MACROS -D__STDC_CONSTANT_MACROS -DBRPC_REVISION=\\\"${BRPC_REVISION}\\\" -D__STRICT_ANSI__")
 set(CMAKE_CPP_FLAGS "${CMAKE_CPP_FLAGS} ${DEBUG_SYMBOL} ${THRIFT_CPP_FLAG}")
-set(CMAKE_CXX_FLAGS "${CMAKE_CPP_FLAGS} -O2 -pipe -Wall -W -fPIC -fstrict-aliasing -Wno-invalid-offsetof -Wno-unused-parameter -fno-omit-frame-pointer")
-set(CMAKE_C_FLAGS "${CMAKE_CPP_FLAGS} -O2 -pipe -Wall -W -fPIC -fstrict-aliasing -Wno-unused-parameter -fno-omit-frame-pointer")
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${CMAKE_CPP_FLAGS} -O2 -pipe -Wall -W -fPIC -fstrict-aliasing -Wno-invalid-offsetof -Wno-unused-parameter -fno-omit-frame-pointer")
+set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} ${CMAKE_CPP_FLAGS} -O2 -pipe -Wall -W -fPIC -fstrict-aliasing -Wno-unused-parameter -fno-omit-frame-pointer")
 
 macro(use_cxx11)
 if(CMAKE_VERSION VERSION_LESS "3.1.3")
@@ -150,20 +168,32 @@ if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
     endif()
 endif()
 
-find_package(Protobuf REQUIRED)
+if(NOT USE_INTERNAL_PROTOBUF_LIBRARY)
+    find_package(Protobuf REQUIRED)
+else()
+    set(PROTOC_LIB ${Protobuf_PROTOC_LIBRARY})
+    set(PROTOBUF_LIBRARIES ${Protobuf_LIBRARY})
+    set(PROTOBUF_INCLUDE_DIR ${Protobuf_INCLUDE_DIR})
+    set(PROTOBUF_INCLUDE_DIRS ${Protobuf_INCLUDE_DIR})
+    set(PROTOBUF_PROTOC_EXECUTABLE ${Protobuf_PROTOC_EXECUTABLE})
+endif()
 find_package(Threads REQUIRED)
 
+if(WITH_LEVELDB)
 find_path(LEVELDB_INCLUDE_PATH NAMES leveldb/db.h)
 find_library(LEVELDB_LIB NAMES leveldb)
 if ((NOT LEVELDB_INCLUDE_PATH) OR (NOT LEVELDB_LIB))
     message(FATAL_ERROR "Fail to find leveldb")
 endif()
+endif()
 
 if(WITH_SNAPPY)
-    find_path(SNAPPY_INCLUDE_PATH NAMES snappy.h)
-    find_library(SNAPPY_LIB NAMES snappy)
-    if ((NOT SNAPPY_INCLUDE_PATH) OR (NOT SNAPPY_LIB))
-        message(FATAL_ERROR "Fail to find snappy")
+    if(NOT USE_INTERNAL_SNAPPY_LIBRARY)
+        find_path(SNAPPY_INCLUDE_PATH NAMES snappy.h)
+        find_library(SNAPPY_LIB NAMES snappy)
+        if ((NOT SNAPPY_INCLUDE_PATH) OR (NOT SNAPPY_LIB))
+            message(FATAL_ERROR "Fail to find snappy")
+        endif()
     endif()
     include_directories(${SNAPPY_INCLUDE_PATH})
 endif()
@@ -197,18 +227,22 @@ if(WITH_RDMA)
     endif()
 endif()
 
-find_library(PROTOC_LIB NAMES protoc)
 if(NOT PROTOC_LIB)
-    message(FATAL_ERROR "Fail to find protoc lib")
+    find_library(PROTOC_LIB NAMES protoc)
+    if(NOT PROTOC_LIB)
+        message(FATAL_ERROR "Fail to find protoc lib")
+    endif()
 endif()
 
-if(CMAKE_SYSTEM_NAME STREQUAL "Darwin")
-    set(OPENSSL_ROOT_DIR
-        "/usr/local/opt/openssl"    # Homebrew installed OpenSSL
-        )
-endif()
+if (NOT USE_INTERNAL_SSL_LIBRARY)
+    if(CMAKE_SYSTEM_NAME STREQUAL "Darwin")
+        set(OPENSSL_ROOT_DIR
+            "/usr/local/opt/openssl"    # Homebrew installed OpenSSL
+            )
+    endif()
 
-find_package(OpenSSL)
+    find_package(OpenSSL)
+endif()
 
 include_directories(
         ${GFLAGS_INCLUDE_PATH}
@@ -226,8 +260,7 @@ set(DYNAMIC_LIB
     ${THRIFT_LIB}
     ${THRIFTNB_LIB}
     ${OPENSSL_CRYPTO_LIBRARY}
-    dl
-    z)
+    dl)
 
 if(WITH_MESALINK)
     list(APPEND DYNAMIC_LIB ${MESALINK_LIB})

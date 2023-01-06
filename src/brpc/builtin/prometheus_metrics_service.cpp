@@ -32,12 +32,16 @@
 #include "brpc/builtin/common.h"
 #include "bvar/bvar.h"
 
+#ifndef FEATURE_HISTOGRAM
 namespace bvar {
 DECLARE_int32(bvar_latency_p1);
 DECLARE_int32(bvar_latency_p2);
 DECLARE_int32(bvar_latency_p3);
 DECLARE_int32(bvar_max_dump_multi_dimension_metric_number);
 }
+#else
+#include "bvar/detail/histogram.h"
+#endif
 
 namespace brpc {
 
@@ -64,22 +68,20 @@ public:
 private:
     DISALLOW_COPY_AND_ASSIGN(PrometheusMetricsDumper);
 
-    // Return true iff name ends with suffix output by LatencyRecorder.
-    bool DumpLatencyRecorderSuffix(const butil::StringPiece& name,
+    // Return true iff name ends with suffix output by LatencyHistogramRecorder.
+    bool DumpLatencyHistogramRecorderSuffix(const butil::StringPiece& name,
                                    const butil::StringPiece& desc);
 
-    // 6 is the number of bvars in LatencyRecorder that indicating percentiles
-    static const int NPERCENTILES = 6;
-
     struct SummaryItems {
-        std::string latency_percentiles[NPERCENTILES];
+        std::string max_latency;
+        uint64_t latency_histogram[bvar::detail::NUM_BUCKETS];
         int64_t latency_avg;
         int64_t count;
         std::string metric_name;
 
         bool IsComplete() const { return !metric_name.empty(); }
     };
-    const SummaryItems* ProcessLatencyRecorderSuffix(const butil::StringPiece& name,
+    const SummaryItems* ProcessLatencyHistogramRecorderSuffix(const butil::StringPiece& name,
                                                      const butil::StringPiece& desc);
 
 private:
@@ -94,9 +96,9 @@ bool PrometheusMetricsDumper::dump(const std::string& name,
         // there is no necessary to monitor string in prometheus
         return true;
     }
-    if (DumpLatencyRecorderSuffix(name, desc)) {
-        // Has encountered name with suffix exposed by LatencyRecorder,
-        // Leave it to DumpLatencyRecorderSuffix to output Summary.
+    if (DumpLatencyHistogramRecorderSuffix(name, desc)) {
+        // Has encountered name with suffix exposed by LatencyHistogramRecorder,
+        // Leave it to DumpLatencyHistogramRecorderSuffix to output Summary.
         return true;
     }
     *_os << "# HELP " << name << '\n'
@@ -106,32 +108,37 @@ bool PrometheusMetricsDumper::dump(const std::string& name,
 }
 
 const PrometheusMetricsDumper::SummaryItems*
-PrometheusMetricsDumper::ProcessLatencyRecorderSuffix(const butil::StringPiece& name,
+PrometheusMetricsDumper::ProcessLatencyHistogramRecorderSuffix(const butil::StringPiece& name,
                                                       const butil::StringPiece& desc) {
-    static std::string latency_names[] = {
-        butil::string_printf("_latency_%d", (int)bvar::FLAGS_bvar_latency_p1),
-        butil::string_printf("_latency_%d", (int)bvar::FLAGS_bvar_latency_p2),
-        butil::string_printf("_latency_%d", (int)bvar::FLAGS_bvar_latency_p3),
-        "_latency_999", "_latency_9999", "_max_latency"
-    };
-    CHECK(NPERCENTILES == arraysize(latency_names));
     const std::string desc_str = desc.as_string();
     butil::StringPiece metric_name(name);
-    for (int i = 0; i < NPERCENTILES; ++i) {
-        if (!metric_name.ends_with(latency_names[i])) {
-            continue;
-        }
-        metric_name.remove_suffix(latency_names[i].size());
+    if (metric_name.ends_with("_max_latency")) {
+        metric_name.remove_suffix(12);
         SummaryItems* si = &_m[metric_name.as_string()];
-        si->latency_percentiles[i] = desc_str;
-        if (i == NPERCENTILES - 1) {
-            // '_max_latency' is the last suffix name that appear in the sorted bvar
-            // list, which means all related percentiles have been gathered and we are
-            // ready to output a Summary.
-            si->metric_name = metric_name.as_string();
-        }
+        si->max_latency = desc_str;
+        // '_max_latency' is the last suffix name that appear in the sorted bvar
+        // list, which means all related percentiles have been gathered and we are
+        // ready to output a Summary.
+        si->metric_name = metric_name.as_string();
         return si;
     }
+
+    static std::string latency_histogram_names[] = {
+        "_latency_bucket_0", "_latency_bucket_1", "_latency_bucket_2", "_latency_bucket_3",
+        "_latency_bucket_4", "_latency_bucket_5", "_latency_bucket_6", "_latency_bucket_7",
+        "_latency_bucket_8", "_latency_bucket_9"
+    };
+    CHECK(bvar::detail::NUM_BUCKETS == arraysize(latency_histogram_names));
+    for (size_t i = 0; i < bvar::detail::NUM_BUCKETS; ++i){
+        if (!metric_name.ends_with(latency_histogram_names[i])) {
+            continue;
+        }
+        metric_name.remove_suffix(latency_histogram_names[i].size());
+        SummaryItems* si =  &_m[metric_name.as_string()];
+        si->latency_histogram[i] = strtoll(desc_str.data(), NULL, 10);
+        return si;
+    }
+
     // Get the average of latency in recent window size
     if (metric_name.ends_with("_latency")) {
         metric_name.remove_suffix(8);
@@ -148,13 +155,13 @@ PrometheusMetricsDumper::ProcessLatencyRecorderSuffix(const butil::StringPiece& 
     return NULL;
 }
 
-bool PrometheusMetricsDumper::DumpLatencyRecorderSuffix(
+bool PrometheusMetricsDumper::DumpLatencyHistogramRecorderSuffix(
     const butil::StringPiece& name,
     const butil::StringPiece& desc) {
     if (!name.starts_with(_server_prefix)) {
         return false;
     }
-    const SummaryItems* si = ProcessLatencyRecorderSuffix(name, desc);
+    const SummaryItems* si = ProcessLatencyHistogramRecorderSuffix(name, desc);
     if (!si) {
         return false;
     }
@@ -162,27 +169,25 @@ bool PrometheusMetricsDumper::DumpLatencyRecorderSuffix(
         return true;
     }
     *_os << "# HELP " << si->metric_name << '\n'
-         << "# TYPE " << si->metric_name << " summary\n"
-         << si->metric_name << "{quantile=\""
-         << (double)(bvar::FLAGS_bvar_latency_p1) / 100 << "\"} "
-         << si->latency_percentiles[0] << '\n'
-         << si->metric_name << "{quantile=\""
-         << (double)(bvar::FLAGS_bvar_latency_p2) / 100 << "\"} "
-         << si->latency_percentiles[1] << '\n'
-         << si->metric_name << "{quantile=\""
-         << (double)(bvar::FLAGS_bvar_latency_p3) / 100 << "\"} "
-         << si->latency_percentiles[2] << '\n'
-         << si->metric_name << "{quantile=\"0.999\"} "
-         << si->latency_percentiles[3] << '\n'
-         << si->metric_name << "{quantile=\"0.9999\"} "
-         << si->latency_percentiles[4] << '\n'
-         << si->metric_name << "{quantile=\"1\"} "
-         << si->latency_percentiles[5] << '\n'
-         << si->metric_name << "_sum "
+         << "# TYPE " << si->metric_name << " histogram\n";
+
+    uint64_t sum = 0;
+    for (size_t i = 0; i < bvar::detail::NUM_BUCKETS; ++i)
+    {
+        sum += si->latency_histogram[i];
+        if (i == bvar::detail::NUM_BUCKETS - 1)
+            *_os << si->metric_name << "_bucket{le=\"+Inf\"} ";
+        else
+            *_os << si->metric_name << "_bucket{le=\"" << bvar::detail::_latency_buckets_ceilings[i] << "\"} ";
+        *_os << std::to_string(sum) << '\n';
+
+    }
+         *_os << si->metric_name << "_sum "
          // There is no sum of latency in bvar output, just use
          // average * count as approximation
-         << si->latency_avg * si->count << '\n'
-         << si->metric_name << "_count " << si->count << '\n';
+         << sum << '\n'
+         << si->metric_name << "_count " << si->count << '\n'
+         << si->metric_name << "_max_latency " << si->max_latency << "\n";
     return true;
 }
 

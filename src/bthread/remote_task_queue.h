@@ -54,6 +54,7 @@ public:
         return 0;
     }
 
+__attribute__((no_sanitize("thread")))
     bool pop(bthread_t* task) {
         if (_tasks.empty()) {
             return false;

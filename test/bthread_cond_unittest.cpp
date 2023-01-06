@@ -21,6 +21,7 @@
 // specific language governing permissions and limitations
 // under the License.
 
+#include <cmath>
 #include <map>
 #include <gtest/gtest.h>
 #include "butil/atomicops.h"

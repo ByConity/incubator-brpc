@@ -30,6 +30,8 @@
 #include "brpc/socket.h"
 #include "brpc/stream.h"
 #include "brpc/streaming_rpc_meta.pb.h"
+#include "butil/atomicops.h"
+#include "butil/iobuf.h"
 
 namespace brpc {
 
@@ -38,7 +40,7 @@ public:
     // |--------------------------------------------------|
     // |----------- Implement SocketConnection -----------|
     // |--------------------------------------------------|
-   
+
     int Connect(Socket* ptr, const timespec* due_time,
                 int (*on_connect)(int, int, void *), void *data);
     ssize_t CutMessageIntoFileDescriptor(int, butil::IOBuf **data_list,
@@ -67,6 +69,9 @@ public:
     int Wait(const timespec* due_time);
     void FillSettings(StreamSettings *settings);
     static int SetFailed(StreamId id);
+    static int SetFinished(StreamId stream_id, int32_t &actual_fin_code, int32_t expected_fin_code, bool finish_remote_stream);
+    int SetFinStatusCode(int32_t fin_status_code);
+    inline int GetFinStatusCode();
     void Close();
 
 private:
@@ -78,9 +83,10 @@ friend class MessageBatcher;
     int Init(const StreamOptions options);
     void SetRemoteConsumed(size_t _remote_consumed);
     void TriggerOnConnectIfNeed();
-    void Wait(void (*on_writable)(StreamId, void*, int), void* arg, 
+    void Wait(void (*on_writable)(StreamId, void*, int), void* arg,
               const timespec* due_time, bool new_thread, bthread_id_t *join_id);
     void SendFeedback();
+    void SendStreamFin(int32_t finish_code);
     void StartIdleTimer();
     void StopIdleTimer();
     void HandleRpcResponse(butil::IOBuf* response_buffer);
@@ -116,15 +122,16 @@ friend class MessageBatcher;
     ConnectMeta         _connect_meta;
     bool                _connected;
     bool                _closed;
-    
+
     bthread_mutex_t _congestion_control_mutex;
     size_t _produced;
     size_t _remote_consumed;
     size_t _cur_buf_size;
+    butil::atomic<int32_t> _finish_status_code;
     bthread_id_list_t _writable_wait_list;
 
     int64_t _local_consumed;
-    StreamSettings _remote_settings;   
+    StreamSettings _remote_settings;
 
     bool _parse_rpc_response;
     bthread::ExecutionQueueId<butil::IOBuf*> _consumer_queue;

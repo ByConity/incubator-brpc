@@ -55,8 +55,10 @@ extern void* __attribute__((weak)) _dl_sym(void* handle, const char* symbol, voi
 
 namespace bthread {
 // Warm up backtrace before main().
-void* dummy_buf[4];
-const int ALLOW_UNUSED dummy_bt = backtrace(dummy_buf, arraysize(dummy_buf));
+// ByteDance ClickHouse: CH BaseDaemon will close the fds after main that opened in libunwind.
+// That would cause invalid fds and incorrect usage further.
+// void* dummy_buf[4];
+// const int ALLOW_UNUSED dummy_bt = backtrace(dummy_buf, arraysize(dummy_buf));
 
 // For controlling contentions collected per second.
 static bvar::CollectorSpeedLimit g_cp_sl = BVAR_COLLECTOR_SPEED_LIMIT_INITIALIZER;
@@ -117,7 +119,7 @@ public:
 
     explicit ContentionProfiler(const char* name);
     ~ContentionProfiler();
-    
+
     void dump_and_destroy(SampledContention* c);
 
     // Write buffered data into resulting file. If `ending' is true, append
@@ -156,7 +158,7 @@ void ContentionProfiler::init_if_needed() {
         _init = true;
     }
 }
-    
+
 void ContentionProfiler::dump_and_destroy(SampledContention* c) {
     init_if_needed();
     // Categorize the contention.
@@ -178,7 +180,7 @@ void ContentionProfiler::dump_and_destroy(SampledContention* c) {
 
 void ContentionProfiler::flush_to_disk(bool ending) {
     BT_VLOG << "flush_to_disk(ending=" << ending << ")";
-    
+
     // Serialize contentions in _dedup_map into _disk_buf.
     if (!_dedup_map.empty()) {
         BT_VLOG << "dedup_map=" << _dedup_map.size();
@@ -305,12 +307,15 @@ void SampledContention::destroy() {
 
 // Remember the conflict hashes for troubleshooting, should be 0 at most of time.
 static butil::static_atomic<int64_t> g_nconflicthash = BUTIL_STATIC_ATOMIC_INIT(0);
+#ifdef ENABLE_CONTENTION_PROFILER
 static int64_t get_nconflicthash(void*) {
     return g_nconflicthash.load(butil::memory_order_relaxed);
 }
+#endif
 
 // Start profiling contention.
 bool ContentionProfilerStart(const char* filename) {
+#ifdef ENABLE_CONTENTION_PROFILER
     if (filename == NULL) {
         LOG(ERROR) << "Parameter [filename] is NULL";
         return false;
@@ -325,7 +330,7 @@ bool ContentionProfilerStart(const char* filename) {
         ("contention_profiler_conflict_hash", get_nconflicthash, NULL);
     static bvar::DisplaySamplingRatio g_sampling_ratio_var(
         "contention_profiler_sampling_ratio", &g_cp_sl);
-    
+
     // Optimistic locking. A not-used ContentionProfiler does not write file.
     std::unique_ptr<ContentionProfiler> ctx(new ContentionProfiler(filename));
     {
@@ -337,6 +342,9 @@ bool ContentionProfilerStart(const char* filename) {
         ++g_cp_version;  // invalidate non-empty entries that may exist.
     }
     return true;
+#else
+    return false;
+#endif
 }
 
 // Stop contention profiler.
@@ -430,7 +438,11 @@ static void init_sys_mutex_lock() {
 }
 
 // Make sure pthread functions are ready before main().
+#ifdef ENABLE_CONTENTION_PROFILER
+/* pthread_mutex_lock() will be replaced in whole project not just brpc,
+ * disable it by default to allow TSAN analyse the data racing correctly */
 const int ALLOW_UNUSED dummy = pthread_once(&init_sys_mutex_lock_once, init_sys_mutex_lock);
+#endif
 
 int first_sys_pthread_mutex_lock(pthread_mutex_t* mutex) {
     pthread_once(&init_sys_mutex_lock_once, init_sys_mutex_lock);
@@ -585,7 +597,7 @@ BUTIL_FORCE_INLINE int pthread_mutex_unlock_impl(pthread_mutex_t* mutex) {
     // Don't change behavior of unlock when profiler is off.
     if (!g_cp || tls_inside_lock) {
         // This branch brings an issue that an entry created by
-        // add_pthread_contention_site may not be cleared. Thus we add a 
+        // add_pthread_contention_site may not be cleared. Thus we add a
         // 16-bit rolling version in the entry to find out such entry.
         return sys_pthread_mutex_unlock(mutex);
     }
@@ -820,11 +832,87 @@ int bthread_mutex_unlock(bthread_mutex_t* m) {
     return 0;
 }
 
+#ifdef ENABLE_CONTENTION_PROFILER
 int pthread_mutex_lock (pthread_mutex_t *__mutex) {
     return bthread::pthread_mutex_lock_impl(__mutex);
 }
 int pthread_mutex_unlock (pthread_mutex_t *__mutex) {
     return bthread::pthread_mutex_unlock_impl(__mutex);
 }
+#endif
 
 }  // extern "C"
+
+#ifdef BUTIL_CXX11_ENABLED
+
+namespace bthread {
+
+TimedMutex::TimedMutex():_mutex() {
+    int ec = bthread_mutex_init(&_mutex, NULL);
+    if (ec != 0) {
+        throw std::system_error(std::error_code(ec, std::system_category()),
+                                "Mutex constructor failed");
+    }
+}
+
+void TimedMutex::lock() {
+    int ec = bthread_mutex_lock(&_mutex);
+    if (ec != 0) {
+        throw std::system_error(std::error_code(ec, std::system_category()),
+                                "Mutex lock failed");
+    }
+}
+
+namespace detail {
+
+bool RecursiveMutexBase::available() noexcept {
+    if (_counter == 0) {
+        return true;
+    }
+    if (_owner_bthread_id == NOT_A_BTHREAD_ID) { // owner is std thread / pthread
+        return this_thread::get_id() == NOT_A_BTHREAD_ID &&
+               _owner_std_thread_id == std::this_thread::get_id();
+    } else { // owner is bthread
+        return _owner_bthread_id == this_thread::get_id();
+    }
+}
+
+void RecursiveMutexBase::setup_ownership() noexcept {
+    if (_counter == 0) {
+        _owner_bthread_id = ::bthread::this_thread::get_id();
+        if (_owner_bthread_id == NOT_A_BTHREAD_ID) {
+            _owner_std_thread_id = std::this_thread::get_id();
+        }
+    }
+    ++_counter;
+}
+
+void RecursiveMutexBase::lock() {
+    std::unique_lock<Mutex> lock(_mtx);
+    _cv.wait(lock, [this]() { return available(); });
+    setup_ownership();
+}
+
+void RecursiveMutexBase::unlock() {
+    std::unique_lock<Mutex> lock(_mtx);
+    --_counter;
+    if (_counter == 0) {
+        lock.unlock();
+        _cv.notify_one();
+    }
+}
+
+bool RecursiveMutexBase::try_lock() {
+    std::unique_lock<Mutex> lock(_mtx, std::try_to_lock);
+    if (lock.owns_lock() && available()) {
+        setup_ownership();
+        return true;
+    }
+    return false;
+}
+
+} // namespace detail
+
+} // namespace bthread
+
+#endif // BUTIL_CXX11_ENABLED

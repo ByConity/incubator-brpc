@@ -143,7 +143,22 @@ static void wakeup_pthread(ButexPthreadWaiter* pw) {
 
 bool erase_from_butex(ButexWaiter*, bool, WaiterState);
 
-int wait_pthread(ButexPthreadWaiter& pw, timespec* ptimeout) {
+int wait_pthread(ButexPthreadWaiter & pw, const timespec * abstime)
+{
+    timespec * ptimeout = NULL;
+    timespec timeout;
+    int64_t timeout_us;
+
+    if (abstime != NULL) {
+        timeout_us = butil::timespec_to_microseconds(*abstime) - butil::gettimeofday_us();
+        if (timeout_us < MIN_SLEEP_US) {
+            errno = ETIMEDOUT;
+            return -1;
+        }
+        timeout = butil::microseconds_to_timespec(timeout_us);
+        ptimeout = &timeout;
+    }
+    
     while (true) {
         const int rc = futex_wait_private(&pw.sig, PTHREAD_NOT_SIGNALLED, ptimeout);
         if (PTHREAD_NOT_SIGNALLED != pw.sig.load(butil::memory_order_acquire)) {
@@ -152,13 +167,19 @@ int wait_pthread(ButexPthreadWaiter& pw, timespec* ptimeout) {
             // Acquire fence makes this thread sees changes before wakeup.
             return rc;
         }
-        if (rc != 0 && errno == ETIMEDOUT) {
-            // Note that we don't handle the EINTR from futex_wait here since
-            // pthreads waiting on a butex should behave similarly as bthreads
-            // which are not able to be woken-up by signals.
-            // EINTR on butex is only producible by TaskGroup::interrupt().
+        if (rc != 0 && ptimeout != NULL) {
+            // Handle the EINTR from futex_wait
+            if (errno != ETIMEDOUT)
+            {
+                timeout_us = butil::timespec_to_microseconds(*abstime) - butil::gettimeofday_us();
+                if (timeout_us > MIN_SLEEP_US) {
+                    timeout = butil::microseconds_to_timespec(timeout_us);
+                    continue;
+                }
+                errno = ETIMEDOUT;
+            }
 
-            // `pw' is still in the queue, remove it.
+            // wait futex timeout, `pw' is still in the queue, remove it.
             if (!erase_from_butex(&pw, false, WAITER_STATE_TIMEDOUT)) {
                 // Another thread is erasing `pw' as well, wait for the signal.
                 // Acquire fence makes this thread sees changes before wakeup.
@@ -573,21 +594,6 @@ static void wait_for_butex(void* arg) {
 
 static int butex_wait_from_pthread(TaskGroup* g, Butex* b, int expected_value,
                                    const timespec* abstime) {
-    // sys futex needs relative timeout.
-    // Compute diff between abstime and now.
-    timespec* ptimeout = NULL;
-    timespec timeout;
-    if (abstime != NULL) {
-        const int64_t timeout_us = butil::timespec_to_microseconds(*abstime) -
-            butil::gettimeofday_us();
-        if (timeout_us < MIN_SLEEP_US) {
-            errno = ETIMEDOUT;
-            return -1;
-        }
-        timeout = butil::microseconds_to_timespec(timeout_us);
-        ptimeout = &timeout;
-    }
-
     TaskMeta* task = NULL;
     ButexPthreadWaiter pw;
     pw.tid = 0;
@@ -618,7 +624,7 @@ static int butex_wait_from_pthread(TaskGroup* g, Butex* b, int expected_value,
         bvar::Adder<int64_t>& num_waiters = butex_waiter_count();
         num_waiters << 1;
 #endif
-        rc = wait_pthread(pw, ptimeout);
+        rc = wait_pthread(pw, abstime);
 #ifdef SHOW_BTHREAD_BUTEX_WAITER_COUNT_IN_VARS
         num_waiters << -1;
 #endif

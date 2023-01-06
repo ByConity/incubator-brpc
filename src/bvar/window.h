@@ -90,6 +90,7 @@ public:
         CHECK_EQ(0, _sampler->set_window_size(_window_size));
     }
     
+__attribute__((no_sanitize("thread")))
     ~WindowBase() {
         hide();
         if (_series_sampler) {

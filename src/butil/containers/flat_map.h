@@ -243,7 +243,9 @@ public:
     // True if init() was successfully called.
     bool initialized() const { return _buckets != NULL; }
 
+__attribute__((no_sanitize("thread")))
     bool empty() const { return _size == 0; }
+__attribute__((no_sanitize("thread")))
     size_t size() const { return _size; }
     size_t bucket_count() const { return _nbucket; }
     u_int load_factor () const { return _load_factor; }

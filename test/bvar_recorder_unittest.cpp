@@ -32,6 +32,7 @@
 #include "butil/macros.h"
 #include "bvar/recorder.h"
 #include "bvar/latency_recorder.h"
+#include "bvar/latency_histogram_recorder.h"
 #include <gtest/gtest.h>
 
 namespace {
@@ -145,8 +146,15 @@ TEST(RecorderTest, positive_overflow) {
     latency1.expose("latency1");
     latency1 << std::numeric_limits<int64_t>::max();
 
+    bvar::LatencyHistogramRecorder histogram_latency1;
+    histogram_latency1.expose("latency1");
+    histogram_latency1 << std::numeric_limits<int64_t>::max();
+
     bvar::LatencyRecorder latency2;
     latency2 << std::numeric_limits<int64_t>::max();
+
+    bvar::LatencyHistogramRecorder histogram_latency2;
+    histogram_latency2 << std::numeric_limits<int64_t>::max();
 }
 
 TEST(RecorderTest, negtive_overflow) {
@@ -177,8 +185,15 @@ TEST(RecorderTest, negtive_overflow) {
     latency1.expose("latency1");
     latency1 << std::numeric_limits<int64_t>::min();
 
+    bvar::LatencyHistogramRecorder histogram_latency1;
+    histogram_latency1.expose("latency1");
+    histogram_latency1 << std::numeric_limits<int64_t>::min();
+
     bvar::LatencyRecorder latency2;
     latency2 << std::numeric_limits<int64_t>::min();
+
+    bvar::LatencyHistogramRecorder histogram_latency2;
+    histogram_latency2 << std::numeric_limits<int64_t>::min();
 }
 
 const size_t OPS_PER_THREAD = 20000000;

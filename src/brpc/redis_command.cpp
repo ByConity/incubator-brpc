@@ -22,6 +22,7 @@
 // under the License.
 
 
+#include <limits>
 #include "butil/logging.h"
 #include "brpc/log.h"
 #include "brpc/redis_command.h"
