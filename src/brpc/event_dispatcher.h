@@ -1,8 +1,3 @@
-/*
- * This file may have been modified by Bytedance Ltd. and/or its affiliates (“ Bytedance's Modifications”).
- * All Bytedance's Modifications are Copyright (2022) Bytedance Ltd. and/or its affiliates.
- */
-
 // Licensed to the Apache Software Foundation (ASF) under one
 // or more contributor license agreements.  See the NOTICE file
 // distributed with this work for additional information
@@ -19,6 +14,11 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
+
+// This file may have been modified by Bytedance Ltd. and/or its
+// affiliates (“Bytedance's Modifications”). All Bytedance's
+// Modifications are Copyright (2022) Bytedance Ltd. and/or its 
+// affiliates.
 
 
 #ifndef BRPC_EVENT_DISPATCHER_H
