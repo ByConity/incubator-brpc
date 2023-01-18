@@ -139,46 +139,40 @@ bool erase_from_butex(ButexWaiter*, bool, WaiterState);
 
 int wait_pthread(ButexPthreadWaiter & pw, const timespec * abstime)
 {
-    timespec * ptimeout = NULL;
+    timespec* ptimeout = NULL;
     timespec timeout;
-    int64_t timeout_us;
+    int64_t timeout_us = 0;
+    int rc;
 
-    if (abstime != NULL) {
-        timeout_us = butil::timespec_to_microseconds(*abstime) - butil::gettimeofday_us();
-        if (timeout_us < MIN_SLEEP_US) {
-            errno = ETIMEDOUT;
-            return -1;
-        }
-        timeout = butil::microseconds_to_timespec(timeout_us);
-        ptimeout = &timeout;
-    }
-    
     while (true) {
-        const int rc = futex_wait_private(&pw.sig, PTHREAD_NOT_SIGNALLED, ptimeout);
-        if (PTHREAD_NOT_SIGNALLED != pw.sig.load(butil::memory_order_acquire)) {
-            // If `sig' is changed, wakeup_pthread() must be called and `pw'
-            // is already removed from the butex.
-            // Acquire fence makes this thread sees changes before wakeup.
-            return rc;
+        if (abstime != NULL) {
+            timeout_us = butil::timespec_to_microseconds(*abstime) - butil::gettimeofday_us();
+            timeout = butil::microseconds_to_timespec(timeout_us);
+            ptimeout = &timeout;
         }
-        if (rc != 0 && ptimeout != NULL) {
-            // Handle the EINTR from futex_wait
-            if (errno != ETIMEDOUT)
-            {
-                timeout_us = butil::timespec_to_microseconds(*abstime) - butil::gettimeofday_us();
-                if (timeout_us > MIN_SLEEP_US) {
-                    timeout = butil::microseconds_to_timespec(timeout_us);
-                    continue;
-                }
-                errno = ETIMEDOUT;
+        if (timeout_us > MIN_SLEEP_US || abstime == NULL) {
+            rc = futex_wait_private(&pw.sig, PTHREAD_NOT_SIGNALLED, ptimeout);
+            if (PTHREAD_NOT_SIGNALLED != pw.sig.load(butil::memory_order_acquire)) {
+                // If `sig' is changed, wakeup_pthread() must be called and `pw'
+                // is already removed from the butex.
+                // Acquire fence makes this thread sees changes before wakeup.
+                return rc;
             }
-
+        } else {
+            errno = ETIMEDOUT;
+            rc = -1;
+        }
+        // Handle ETIMEDOUT when abstime is valid.
+        // If futex_wait_private return EINTR, just continue the loop.
+        if (rc != 0 && errno == ETIMEDOUT) {
             // wait futex timeout, `pw' is still in the queue, remove it.
             if (!erase_from_butex(&pw, false, WAITER_STATE_TIMEDOUT)) {
                 // Another thread is erasing `pw' as well, wait for the signal.
                 // Acquire fence makes this thread sees changes before wakeup.
                 if (pw.sig.load(butil::memory_order_acquire) == PTHREAD_NOT_SIGNALLED) {
-                    ptimeout = NULL; // already timedout, ptimeout is expired.
+                    // already timedout, abstime and ptimeout are expired.
+                    abstime = NULL;
+                    ptimeout = NULL;
                     continue;
                 }
             }
