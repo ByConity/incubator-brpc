@@ -26,6 +26,14 @@
 #include "bthread/errno.h"                       // EAGAIN
 #include "bthread/task_group.h"                  // TaskGroup
 
+#if USE_JEMALLOC
+#    include <jemalloc/jemalloc.h>
+#endif
+
+#if !USE_JEMALLOC || JEMALLOC_VERSION_MAJOR < 4
+#    include <cstdlib>
+#endif
+
 // Implement bthread_key_t related functions
 
 namespace bthread {
@@ -51,7 +59,7 @@ static const uint32_t KEY_2NDLEVEL_SIZE = 32;
 static const uint32_t KEY_1STLEVEL_SIZE = 31;
 
 // Max tls in one thread, currently the value is 992 which should be enough
-// for most projects throughout baidu. 
+// for most projects throughout baidu.
 static const uint32_t KEYS_MAX = KEY_2NDLEVEL_SIZE * KEY_1STLEVEL_SIZE;
 
 // destructors/version of TLS.
@@ -93,7 +101,7 @@ public:
                 // Set the position to NULL before calling dtor which may set
                 // the position again.
                 _data[i].ptr = NULL;
-                
+
                 KeyInfo info = bthread::s_key_info[offset + i];
                 if (info.dtor && _data[i].version == info.version) {
                     info.dtor(p, info.dtor_args);
@@ -122,6 +130,16 @@ public:
     inline void set_data(uint32_t index, uint32_t version, void* data) {
         _data[index].version = version;
         _data[index].ptr = data;
+    }
+
+    void * operator new(std::size_t size, const std::nothrow_t &) noexcept
+    {
+        return malloc(size);
+    }
+
+    void operator delete(void * ptr) noexcept
+    {
+        free(ptr);
     }
 
 private:
@@ -176,6 +194,16 @@ public:
             }
         }
         return NULL;
+    }
+
+    void * operator new(std::size_t size, const std::nothrow_t &) noexcept
+    {
+        return malloc(size);
+    }
+
+    void operator delete(void * ptr) noexcept
+    {
+        free(ptr);
     }
 
     inline int set_data(bthread_key_t key, void* data) {
@@ -421,10 +449,10 @@ int bthread_key_delete(bthread_key_t key) {
                 ++bthread::s_key_info[key.index].version;
             }
             bthread::s_key_info[key.index].dtor = NULL;
-            bthread::s_key_info[key.index].dtor_args = NULL;        
+            bthread::s_key_info[key.index].dtor_args = NULL;
             bthread::s_free_keys[bthread::nfreekey++] = key.index;
             return 0;
-        } 
+        }
     }
     CHECK(false) << "bthread_key_delete is called on invalid " << key;
     return EINVAL;
