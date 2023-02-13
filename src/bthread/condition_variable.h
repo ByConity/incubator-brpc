@@ -45,7 +45,7 @@ class ConditionVariable {
     DISALLOW_COPY_AND_ASSIGN(ConditionVariable);
 public:
     typedef bthread_cond_t*         native_handler_type;
-    
+
     ConditionVariable() {
         CHECK_EQ(0, bthread_cond_init(&_cond, NULL));
     }
@@ -95,6 +95,55 @@ public:
 
     void notify_all() {
         bthread_cond_broadcast(&_cond);
+    }
+
+    template<typename Pred>
+    void wait(std::unique_lock<bthread::Mutex>& lock, Pred pred) {
+        while (!pred())
+            wait(lock);
+    }
+
+    template<typename Rep, typename Period>
+    std::cv_status wait_for(std::unique_lock<bthread::Mutex>& lock,
+                            const std::chrono::duration<Rep, Period>& timeout_duration) {
+        if (timeout_duration < timeout_duration.zero())
+            return std::cv_status::timeout;
+
+        auto timeout_nano = std::chrono::duration_cast<std::chrono::nanoseconds>(timeout_duration);
+        auto time_spec = butil::nanoseconds_from_now(timeout_nano.count());
+        const int rc = bthread_cond_timedwait(&_cond, lock.mutex()->native_handler(), &time_spec);
+
+        if(!rc)
+            return std::cv_status::no_timeout;
+
+        if(rc != ETIMEDOUT)
+            std::terminate();
+
+        return std::cv_status::timeout;
+    }
+
+    template<typename Clock, typename Duration, typename Pred>
+    bool wait_until(std::unique_lock<bthread::Mutex>& lock,
+                    const std::chrono::time_point<Clock, Duration>& timeout_time,
+                    Pred pred) {
+        while (!pred()) {
+            if (wait_until(lock, timeout_time) == std::cv_status::timeout)
+                return pred();
+        }
+        return true;
+    }
+
+    template<typename Rep, typename Period, typename Pred>
+    bool wait_for(std::unique_lock<bthread::Mutex>& lock,
+                  const std::chrono::duration<Rep, Period>& rel_time,
+                  Pred pred) {
+        return wait_until(lock, std::chrono::steady_clock::now() + rel_time, std::move(pred));
+    }
+
+    template<typename Clock, typename Duration>
+    std::cv_status wait_until(std::unique_lock<bthread::Mutex>& lock,
+                              const std::chrono::time_point<Clock, Duration>& timeout_time) {
+        return wait_for(lock, timeout_time - Clock::now());
     }
 
 private:
