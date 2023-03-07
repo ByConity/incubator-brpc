@@ -1,134 +1,78 @@
+#include <cassert>
+#include <pthread.h>
+#include "bthread/bthread.h"
 #include "bthread/condition_variable.h"
 
 namespace bthread {
 
-// The bthread equivalent of std::timed_mutex.
-class TimedMutex {
+class TaskGroup;
 
+extern BAIDU_THREAD_LOCAL TaskGroup* tls_task_group;
+
+class RecursiveMutex {
 public:
-    using native_handle_type = bthread_mutex_t*;
+    DISALLOW_COPY_AND_ASSIGN(RecursiveMutex);
 
-    DISALLOW_COPY_AND_ASSIGN(TimedMutex);
+    RecursiveMutex() = default;
 
-    TimedMutex();
+    ~RecursiveMutex() { std::lock_guard<Mutex> lk(mtx); }
 
-    ~TimedMutex() { CHECK_EQ(0, bthread_mutex_destroy(&_mutex)); }
+    void lock() {
+        std::unique_lock<Mutex> lk(mtx);
 
-    void lock();
-
-    void unlock() { bthread_mutex_unlock(&_mutex); }
-
-    bool try_lock() { return !bthread_mutex_trylock(&_mutex); }
-
-    template<typename Rep, typename Period>
-    bool try_lock_for(const std::chrono::duration<Rep, Period>& rel_time);
-
-    template<typename Clock, typename Duration>
-    bool try_lock_until(const std::chrono::time_point<Clock, Duration>& timeout_time);
-
-private:
-    bthread_mutex_t _mutex;
-};
-
-template<typename Rep, typename Period>
-bool TimedMutex::try_lock_for(const std::chrono::duration<Rep, Period>& rel_time) {
-    return TimedMutex::try_lock_until(std::chrono::steady_clock::now() + rel_time);
-}
-
-template<typename Clock, typename Duration>
-bool TimedMutex::try_lock_until(const std::chrono::time_point<Clock, Duration>& timeout_time) {
-    auto dur = timeout_time - Clock::now();
-    auto sys_timeout = std::chrono::time_point_cast<std::chrono::nanoseconds>(
-            std::chrono::system_clock::now() + dur);
-    auto nanos_since_epoch = sys_timeout.time_since_epoch();
-    auto secs_since_epoch = std::chrono::duration_cast<std::chrono::seconds>(nanos_since_epoch);
-    auto max_timespec_secs = std::numeric_limits<decltype(timespec::tv_sec)>::max();
-    timespec sp{};
-    if (secs_since_epoch.count() < max_timespec_secs) {
-        sp.tv_sec = secs_since_epoch.count();
-        sp.tv_nsec = static_cast<decltype(sp.tv_nsec)>(
-                (nanos_since_epoch - secs_since_epoch).count());
-    } else {
-        sp.tv_sec = max_timespec_secs;
-        sp.tv_nsec = 999999999;
-    }
-    return !bthread_mutex_timedlock(&_mutex, &sp);
-}
-
-class RecursiveTimedMutex;
-
-namespace detail {
-
-class RecursiveMutexBase {
-public:
-    DISALLOW_COPY_AND_ASSIGN(RecursiveMutexBase);
-
-    RecursiveMutexBase() : _counter(0) {
+        cv.wait(lk, [this]() { return available(); });
+        setup_ownership();
     }
 
-    ~RecursiveMutexBase() {
-        std::lock_guard<Mutex> lock(_mtx);
+    void unlock() {
+        std::unique_lock<Mutex> lk(mtx);
+
+        if (--counter)
+            return;
+
+        assert(counter == 0);
+        lk.unlock();
+        cv.notify_one();
     }
 
-    void lock();
+    bool try_lock() {
+        std::unique_lock<Mutex> lk(mtx, std::try_to_lock);
 
-    void unlock();
+        if (!lk.owns_lock() || !available())
+            return false;
 
-    bool try_lock();
-
-    friend class ::bthread::RecursiveTimedMutex;
-
-private:
-
-    bool available() noexcept;
-
-    void setup_ownership() noexcept;
-
-    Mutex _mtx;
-    ConditionVariable _cv;
-    int _counter;
-    Thread::id _owner_bthread_id; // Valid only if owner is a bthread
-    std::thread::id _owner_std_thread_id; // Valid only if owner is a std thread / pthread
-};
-
-}
-
-// The bthread equivalent of std::recursive_mutex.
-// This is a higher level construct that is not directly supported by native bthread APIs.
-class RecursiveMutex : public detail::RecursiveMutexBase {
-};
-
-// The bthread equivalent of std::recursive_timed_mutex.
-// This is also a higher level construct not directly supported by native bthread APIs.
-class RecursiveTimedMutex : public detail::RecursiveMutexBase {
-public:
-    template<class Rep, class Period>
-    bool try_lock_for(const std::chrono::duration<Rep, Period>& rel_time);
-
-    template<typename Clock, typename Duration>
-    bool try_lock_until(const std::chrono::time_point<Clock, Duration>& timeout_time);
-};
-
-template<typename Rep, typename Period>
-bool RecursiveTimedMutex::try_lock_for(const std::chrono::duration<Rep, Period>& rel_time) {
-    return RecursiveTimedMutex::try_lock_until(std::chrono::steady_clock::now() + rel_time);
-}
-
-template<typename Clock, typename Duration>
-bool
-RecursiveTimedMutex::try_lock_until(const std::chrono::time_point<Clock, Duration>& timeout_time) {
-    std::unique_lock<Mutex> lock(_mtx);
-    while(!available()) {
-        if(Clock::now() >= timeout_time) {
-            break;
-        }
-        _cv.wait_until(lock, timeout_time);
-    }
-    if (available()) {
         setup_ownership();
         return true;
     }
-    return false;
-}
+
+protected:
+    bool available() noexcept {
+        if (counter == 0)
+            return true;
+
+        if (own_by_bthread != !!tls_task_group)
+            return false;
+
+        return get_tid() == tid;
+    }
+
+    void setup_ownership() noexcept {
+        if (counter++)
+            return;
+
+        own_by_bthread = !!tls_task_group;
+        tid = get_tid();
+    }
+
+    uint64_t get_tid() {
+        return own_by_bthread ? bthread_self() : pthread_self();
+    }
+
+    ConditionVariable cv;
+    Mutex mtx;
+    int counter {0};
+    uint64_t tid {0};
+    bool own_by_bthread {false};
+};
 
 }  // namespace bthread
