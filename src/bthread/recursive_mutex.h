@@ -1,3 +1,4 @@
+#pragma once
 #include <cassert>
 #include <pthread.h>
 #include "bthread/bthread.h"
