@@ -22,6 +22,9 @@
 #include "butil/memory/singleton_on_pthread_once.h"
 #include "bvar/bvar.h"
 #include "bvar/collector.h"
+#ifdef __linux__
+#include <sys/prctl.h>
+#endif
 
 namespace bvar {
 
@@ -77,11 +80,17 @@ private:
                             int64_t interval_us);
 
     static void* run_grab_thread(void* arg) {
+#ifdef __linux__
+        prctl(PR_SET_NAME, "brpc_grab", 0, 0, 0);
+#endif
         static_cast<Collector*>(arg)->grab_thread();
         return NULL;
     }
 
     static void* run_dump_thread(void* arg) {
+#ifdef __linux__
+        prctl(PR_SET_NAME, "brpc_dump", 0, 0, 0);
+#endif
         static_cast<Collector*>(arg)->dump_thread();
         return NULL;
     }
@@ -91,12 +100,12 @@ __attribute__((no_sanitize("thread")))
         Collector* d = static_cast<Collector*>(arg);
         return d->_ngrab - d->_ndump - d->_ndrop;
     }
-    
+
 private:
     // periodically modified by grab_thread, accessed by every submit.
     // Make sure that this cacheline does not include frequently modified field.
     int64_t _last_active_cpuwide_us;
-    
+
     bool _created;      // Mark validness of _grab_thread.
     bool _stop;         // Set to true in dtor.
     pthread_t _grab_thread;     // For joining.
@@ -200,7 +209,7 @@ void Collector::grab_thread() {
             butil::LinkNode<Collected> tmp_root;
             head->InsertBeforeAsList(&tmp_root);
             head = NULL;
-            
+
             // Group samples by preprocessors.
             for (butil::LinkNode<Collected>* p = tmp_root.next(); p != &tmp_root;) {
                 butil::LinkNode<Collected>* saved_next = p->next();
@@ -259,7 +268,7 @@ void Collector::grab_thread() {
             update_speed_limit(it->first, &last_ngrab_map[it->first],
                                it->second, interval);
         }
-        
+
         now = butil::cpuwide_time_us();
         // calcuate thread usage.
         busy_seconds += (now - _last_active_cpuwide_us) / 1000000.0;
@@ -277,7 +286,7 @@ void Collector::grab_thread() {
     // make sure _stop is true, we may have other reasons to quit above loop
     {
         BAIDU_SCOPED_LOCK(_dump_thread_mutex);
-        _stop = true; 
+        _stop = true;
         pthread_cond_signal(&_dump_thread_cond);
     }
     CHECK_EQ(0, pthread_join(_dump_thread, NULL));
@@ -336,7 +345,7 @@ void Collector::update_speed_limit(CollectorSpeedLimit* sl,
     }
 
     // NOTE: don't update unmodified fields in sl to avoid meaningless
-    // flushing of the cacheline. 
+    // flushing of the cacheline.
     if (new_sampling_range != old_sampling_range) {
         sl->sampling_range = new_sampling_range;
     }

@@ -24,6 +24,9 @@
 #include "bvar/detail/sampler.h"
 #include "bvar/passive_status.h"
 #include "bvar/window.h"
+#ifdef __linux__
+#include <sys/prctl.h>
+#endif
 
 namespace bvar {
 namespace detail {
@@ -108,6 +111,9 @@ private:
     void run();
 
     static void* sampling_thread(void* arg) {
+#ifdef __linux__
+        prctl(PR_SET_NAME, "brpc_sampling", 0, 0, 0);
+#endif
         static_cast<SamplerCollector*>(arg)->run();
         return NULL;
     }
@@ -132,7 +138,7 @@ DEFINE_int32(bvar_sampler_thread_start_delay_us, 10000, "bvar sampler thread sta
 
 void SamplerCollector::run() {
     ::usleep(FLAGS_bvar_sampler_thread_start_delay_us);
-    
+
 #ifndef UNIT_TEST
     // NOTE:
     // * Following vars can't be created on thread's stack since this thread
@@ -188,7 +194,7 @@ void SamplerCollector::run() {
         }
         if (slept) {
             consecutive_nosleep = 0;
-        } else {            
+        } else {
             if (++consecutive_nosleep >= WARN_NOSLEEP_THRESHOLD) {
                 consecutive_nosleep = 0;
                 LOG(WARNING) << "bvar is busy at sampling for "

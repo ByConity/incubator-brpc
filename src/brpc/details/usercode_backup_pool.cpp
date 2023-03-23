@@ -24,6 +24,9 @@
 #include "butil/comlog_sink.h"
 #endif
 #include "brpc/details/usercode_backup_pool.h"
+#ifdef __linux__
+#include <sys/prctl.h>
+#endif
 
 namespace bthread {
 // Defined in bthread/task_control.cpp
@@ -91,6 +94,9 @@ UserCodeBackupPool::UserCodeBackupPool()
 }
 
 static void* UserCodeRunner(void* args) {
+#ifdef __linux__
+    prctl(PR_SET_NAME, "brpc_ucoderunner", 0, 0, 0);
+#endif
     static_cast<UserCodeBackupPool*>(args)->UserCodeRunningLoop();
     return NULL;
 }
@@ -114,7 +120,7 @@ void UserCodeBackupPool::UserCodeRunningLoop() {
 #ifdef BAIDU_INTERNAL
     logging::ComlogInitializer comlog_initializer;
 #endif
-    
+
     int64_t last_time = butil::cpuwide_time_us();
     while (true) {
         bool blocked = false;
@@ -158,7 +164,7 @@ void InitUserCodeBackupPoolOnceOrDie() {
 
 void EndRunningUserCodeInPool(void (*fn)(void*), void* arg) {
     InitUserCodeBackupPoolOnceOrDie();
-    
+
     g_usercode_inplace.fetch_sub(1, butil::memory_order_relaxed);
 
     // Not enough idle workers, run the code in backup threads to prevent
