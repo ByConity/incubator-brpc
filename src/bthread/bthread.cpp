@@ -22,6 +22,7 @@
 #if defined(THREAD_SANITIZER)
 #include <csignal>
 #endif
+#include <time.h>
 #include <gflags/gflags.h>
 #include "butil/macros.h"                       // BAIDU_CASSERT
 #include "butil/logging.h"
@@ -48,7 +49,7 @@ static bool validate_bthread_concurrency(const char*, int32_t val) {
     // not be strictly in a validator. But it's OK for a int flag.
     return bthread_setconcurrency(val) == 0;
 }
-const int ALLOW_UNUSED register_FLAGS_bthread_concurrency = 
+const int ALLOW_UNUSED register_FLAGS_bthread_concurrency =
     ::GFLAGS_NS::RegisterFlagValidator(&FLAGS_bthread_concurrency,
                                     validate_bthread_concurrency);
 
@@ -402,7 +403,23 @@ int bthread_usleep(uint64_t microseconds) {
     if (NULL != g && !g->is_current_pthread_task()) {
         return bthread::TaskGroup::usleep(&g, microseconds);
     }
-    return ::usleep(microseconds);
+    constexpr auto clock_type = CLOCK_MONOTONIC;
+
+    struct timespec current_time;
+    clock_gettime(clock_type, &current_time);
+
+    constexpr uint64_t resolution = 1000000000;
+    struct timespec finish_time = current_time;
+
+    uint64_t nanoseconds = microseconds * 1000;
+    finish_time.tv_nsec += nanoseconds % resolution;
+    const uint64_t extra_second = finish_time.tv_nsec / resolution;
+    finish_time.tv_nsec %= resolution;
+
+    finish_time.tv_sec += (nanoseconds / resolution) + extra_second;
+
+    while (clock_nanosleep(clock_type, TIMER_ABSTIME, &finish_time, nullptr) == EINTR);
+    return 0;
 }
 
 int bthread_yield(void) {
@@ -472,5 +489,5 @@ int bthread_list_join(bthread_list_t* list) {
     static_cast<bthread::TidList*>(list->impl)->apply(bthread::TidJoiner());
     return 0;
 }
-    
+
 }  // extern "C"
