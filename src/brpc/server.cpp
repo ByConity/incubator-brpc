@@ -116,9 +116,6 @@ DECLARE_bool(usercode_in_pthread);
 
 const int INITIAL_SERVICE_CAP = 64;
 const int INITIAL_CERT_MAP = 64;
-// NOTE: never make s_ncore extern const whose ctor seq against other
-// compilation units is undefined.
-const int s_ncore = sysconf(_SC_NPROCESSORS_ONLN);
 
 ServerOptions::ServerOptions()
     : idle_timeout_sec(-1)
@@ -143,9 +140,6 @@ ServerOptions::ServerOptions()
     , health_reporter(NULL)
     , rtmp_service(NULL)
     , redis_service(NULL) {
-    if (s_ncore > 0) {
-        num_threads = s_ncore + 1;
-    }
 }
 
 ServerSSLOptions* ServerOptions::mutable_ssl_options() {
