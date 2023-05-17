@@ -89,7 +89,8 @@ ParseResult InputMessenger::CutInputMessage(
                 return result;
             } else {
                 if (m->_read_buf.size() >= 4) {
-                    char data[PROTO_DUMMY_LEN];
+                    // `data' must be PROTO_DUMMY_LEN + 1 to store extra ending char '\0'
+                    char data[PROTO_DUMMY_LEN + 1];
                     m->_read_buf.copy_to_cstr(data, PROTO_DUMMY_LEN);
                     if (strncmp(data, "RDMA", PROTO_DUMMY_LEN) == 0 &&
                         m->_rdma_state == Socket::RDMA_OFF) {
