@@ -43,6 +43,10 @@ message RpcRequestMeta {
     optional int64 parent_span_id = 6;
     optional string request_id = 7; // correspond to x-request-id in http header
     optional int32 timeout_ms = 8;  // client's timeout setting for current call
+
+    // below for opentelemetry tracing
+    optional bytes otel_traceparent = 21;
+    optional bytes otel_tracestate = 22;
 }
 
 message RpcResponseMeta {

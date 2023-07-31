@@ -144,6 +144,8 @@ friend void policy::ProcessThriftRequest(InputMessageBase*);
     static const uint32_t FLAGS_HEALTH_CHECK_CALL = (1 << 19);
     static const uint32_t FLAGS_PB_SINGLE_REPEATED_TO_ARRAY = (1 << 20);
     static const uint32_t FLAGS_MANAGE_HTTP_BODY_ON_ERROR = (1 << 21);
+    static const uint32_t FLAGS_OTEL_TRACEPARENT = (1 << 30);
+    static const uint32_t FLAGS_OTEL_TRACESTATE = (1 << 31);
 
 public:
     struct Inheritable {
@@ -216,6 +218,10 @@ public:
     void set_log_id(uint64_t log_id);
 
     void set_request_id(std::string request_id) { _inheritable.request_id = request_id; }
+
+    // Setters: for opentelemetry tracing
+    void set_otel_traceparent(const std::string& traceparent);
+    void set_otel_tracestate(const std::string& tracestate);
 
     // Set type of service: http://en.wikipedia.org/wiki/Type_of_service
     // Current implementation has limits: If the connection is already
@@ -425,6 +431,12 @@ public:
     // NOTE: Only valid at server-side, always zero at client-side.
     uint64_t trace_id() const;
     uint64_t span_id() const;
+
+    // Getters: for opentelemetry tracing
+    bool has_otel_traceparent() const { return has_flag(FLAGS_OTEL_TRACEPARENT); }
+    const std::string& otel_traceparent() { return _otel_traceparent; }
+    bool has_otel_tracestate() const { return has_flag(FLAGS_OTEL_TRACESTATE); }
+    const std::string& otel_tracestate() { return _otel_tracestate; }
 
     // Tell RPC to close the connection instead of sending back response.
     // If this controller was not SetFailed() before, ErrorCode() will be
@@ -724,6 +736,10 @@ private:
     std::string _error_text;
     butil::EndPoint _remote_side;
     butil::EndPoint _local_side;
+
+    // for opentelemetry tracing
+    std::string _otel_traceparent;
+    std::string _otel_tracestate;
     
     void* _session_local_data;
     const Server* _server;

@@ -358,6 +358,11 @@ void ProcessRpcRequest(InputMessageBase* msg_base) {
     }
     if (request_meta.has_timeout_ms()) {
         cntl->set_timeout_ms(request_meta.timeout_ms());
+    if (request_meta.has_otel_traceparent()) {
+        cntl->set_otel_traceparent(request_meta.otel_traceparent());
+    }
+    if (request_meta.has_otel_tracestate()) {
+        cntl->set_otel_tracestate(request_meta.otel_tracestate());
     }
     cntl->set_request_compress_type((CompressType)meta.compress_type());
     accessor.set_server(server)
@@ -669,6 +674,12 @@ void PackRpcRequest(butil::IOBuf* req_buf,
     }
     if (!cntl->request_id().empty()) {
         request_meta->set_request_id(cntl->request_id());
+    }
+    if (cntl->has_otel_traceparent()) {
+        request_meta->set_otel_traceparent(cntl->otel_traceparent());
+    }
+    if (cntl->has_otel_tracestate()) {
+        request_meta->set_otel_tracestate(cntl->otel_tracestate());
     }
     meta.set_correlation_id(correlation_id);
     StreamId request_stream_id = accessor.request_stream();

@@ -346,6 +346,15 @@ void Controller::set_log_id(uint64_t log_id) {
     _inheritable.log_id = log_id;
 }
 
+void Controller::set_otel_traceparent(const std::string& traceparent) {
+    add_flag(FLAGS_OTEL_TRACEPARENT);
+    _otel_traceparent = traceparent;
+}
+
+void Controller::set_otel_tracestate(const std::string& tracestate) {
+    add_flag(FLAGS_OTEL_TRACESTATE);
+    _otel_tracestate = tracestate;
+}
 
 bool Controller::Failed() const {
     return FailedInline();
