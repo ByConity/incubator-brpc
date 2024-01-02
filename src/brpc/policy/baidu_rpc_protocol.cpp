@@ -358,6 +358,7 @@ void ProcessRpcRequest(InputMessageBase* msg_base) {
     }
     if (request_meta.has_timeout_ms()) {
         cntl->set_timeout_ms(request_meta.timeout_ms());
+    }
     if (request_meta.has_otel_traceparent()) {
         cntl->set_otel_traceparent(request_meta.otel_traceparent());
     }
