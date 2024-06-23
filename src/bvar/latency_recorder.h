@@ -157,6 +157,8 @@ public:
     const std::string& qps_name() const { return _qps.name(); }
 };
 
+DECLARE_uint64(latency_scale_factor);
+
 std::ostream& operator<<(std::ostream& os, const LatencyRecorder&);
 
 }  // namespace bvar

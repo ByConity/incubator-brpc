@@ -24,6 +24,7 @@
 #include "bvar/reducer.h"
 #include "bvar/passive_status.h"
 #include "bvar/detail/histogram.h"
+#include "bvar/latency_recorder.h"
 
 namespace bvar {
 namespace detail {

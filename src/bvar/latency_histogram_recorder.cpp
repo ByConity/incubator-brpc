@@ -159,6 +159,7 @@ void LatencyHistogramRecorder::hide() {
 }
 
 LatencyHistogramRecorder& LatencyHistogramRecorder::operator<<(int64_t latency) {
+    latency = latency / FLAGS_latency_scale_factor;
     _latency << latency;
     _max_latency << latency;
     _histogram << latency;
