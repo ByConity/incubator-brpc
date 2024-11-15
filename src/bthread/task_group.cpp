@@ -61,7 +61,9 @@ BAIDU_VOLATILE_THREAD_LOCAL(TaskGroup*, tls_task_group, NULL);
 // Sync with TaskMeta::local_storage when a bthread is created or destroyed.
 // During running, the two fields may be inconsistent, use tls_bls as the
 // groundtruth.
-__thread LocalStorage tls_bls = BTHREAD_LOCAL_STORAGE_INITIALIZER;
+pthread_key_t tls_keytable_key;
+pthread_key_t tls_span_key;
+pthread_key_t tls_data_key;
 
 // defined in bthread/key.cpp
 extern void return_keytable(bthread_keytable_pool_t*, KeyTable*);
@@ -248,9 +250,6 @@ int TaskGroup::init(size_t runqueue_capacity) {
     return 0;
 }
 
-#if defined(__linux__) && defined(__aarch64__) && defined(__clang__)
-    __attribute__((optnone))
-#endif
 void TaskGroup::task_runner(intptr_t skip_remained) {
     // NOTE: tls_task_group is volatile since tasks are moved around
     //       different groups.
@@ -300,9 +299,6 @@ void TaskGroup::task_runner(intptr_t skip_remained) {
             thread_return = e.value();
         }
 
-        // Group is probably changed
-        g = BAIDU_GET_VOLATILE_THREAD_LOCAL(tls_task_group);
-
         // TODO: Save thread_return
         (void)thread_return;
 
@@ -317,13 +313,17 @@ void TaskGroup::task_runner(intptr_t skip_remained) {
         // Clean tls variables, must be done before changing version_butex
         // otherwise another thread just joined this thread may not see side
         // effects of destructing tls variables.
-        KeyTable* kt = tls_bls.keytable;
+        KeyTable* kt = static_cast<KeyTable*>(pthread_getspecific(tls_keytable_key));
         if (kt != NULL) {
             return_keytable(m->attr.keytable_pool, kt);
             // After deletion: tls may be set during deletion.
-            tls_bls.keytable = NULL;
+            pthread_setspecific(tls_keytable_key, nullptr);
             m->local_storage.keytable = NULL; // optional
         }
+
+        // During running the function in TaskMeta and deleting the KeyTable in
+        // return_KeyTable, the group is probably changed.
+        g =  BAIDU_GET_VOLATILE_THREAD_LOCAL(tls_task_group);
 
         // Increase the version and wake up all joiners, if resulting version
         // is 0, change it to 1 to make bthread_t never be 0. Any access
@@ -383,7 +383,7 @@ int TaskGroup::start_foreground(TaskGroup** pg,
     m->attr = using_attr;
     m->local_storage = LOCAL_STORAGE_INIT;
     if (using_attr.flags & BTHREAD_INHERIT_SPAN) {
-        m->local_storage.rpcz_parent_span = tls_bls.rpcz_parent_span;
+        m->local_storage.rpcz_parent_span = pthread_getspecific(bthread::tls_span_key);
     }
     m->cpuwide_start_ns = start_ns;
     m->stat = EMPTY_STAT;
@@ -441,7 +441,7 @@ int TaskGroup::start_background(bthread_t* __restrict th,
     m->attr = using_attr;
     m->local_storage = LOCAL_STORAGE_INIT;
     if (using_attr.flags & BTHREAD_INHERIT_SPAN) {
-        m->local_storage.rpcz_parent_span = tls_bls.rpcz_parent_span;
+        m->local_storage.rpcz_parent_span = pthread_getspecific(bthread::tls_span_key);
     }
     m->cpuwide_start_ns = start_ns;
     m->stat = EMPTY_STAT;
@@ -596,8 +596,15 @@ void TaskGroup::sched_to(TaskGroup** pg, TaskMeta* next_meta) {
     if (__builtin_expect(next_meta != cur_meta, 1)) {
         g->_cur_meta = next_meta;
         // Switch tls_bls
-        cur_meta->local_storage = tls_bls;
-        tls_bls = next_meta->local_storage;
+        LocalStorage* ls = &cur_meta->local_storage;
+        ls->keytable = static_cast<bthread::KeyTable*>(pthread_getspecific(bthread::tls_keytable_key));
+        ls->assigned_data = pthread_getspecific(bthread::tls_data_key);
+        ls->rpcz_parent_span = pthread_getspecific(bthread::tls_span_key);
+
+        ls = &next_meta->local_storage;
+        pthread_setspecific(bthread::tls_span_key, ls->rpcz_parent_span);
+        pthread_setspecific(bthread::tls_data_key, ls->assigned_data);
+        pthread_setspecific(bthread::tls_keytable_key, ls->keytable);
 
         // Logging must be done after switching the local storage, since the logging lib
         // use bthread local storage internally, or will cause memory leak.

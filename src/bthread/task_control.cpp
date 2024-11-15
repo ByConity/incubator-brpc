@@ -126,6 +126,10 @@ static int64_t get_cumulated_signal_count_from_this(void *arg) {
     return static_cast<TaskControl*>(arg)->get_cumulated_signal_count();
 }
 
+extern pthread_key_t tls_keytable_key;
+extern pthread_key_t tls_span_key;
+extern pthread_key_t tls_data_key;
+
 TaskControl::TaskControl()
     // NOTE: all fileds must be initialized before the vars.
     : _ngroup(0)
@@ -159,6 +163,21 @@ int TaskControl::init(int concurrency) {
         return -1;
     }
     _concurrency = concurrency;
+    int err = pthread_key_create(&tls_keytable_key, nullptr);
+    if (err) {
+        LOG(ERROR) << "Error creating pthread key: " << strerror(err);
+        return -1;
+    }
+    err = pthread_key_create(&tls_data_key, nullptr);
+    if (err) {
+        LOG(ERROR) << "Error creating pthread key: " << strerror(err);
+        return -1;
+    }
+    err = pthread_key_create(&tls_span_key, nullptr);
+    if (err) {
+        LOG(ERROR) << "Error creating pthread key: " << strerror(err);
+        return -1;
+    }
 
     // Make sure TimerThread is ready.
     if (get_or_create_global_timer_thread() == NULL) {

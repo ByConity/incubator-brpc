@@ -34,7 +34,7 @@
 #include "brpc/span.pb.h"
 
 namespace bthread {
-extern __thread bthread::LocalStorage tls_bls;
+extern pthread_key_t tls_span_key;
 }
 
 
@@ -75,7 +75,7 @@ public:
 
     // Set tls parent.
     void AsParent() {
-        bthread::tls_bls.rpcz_parent_span = this;
+        pthread_setspecific(bthread::tls_span_key, this);
     }
 
     // Add log with time.
@@ -100,7 +100,7 @@ public:
     void set_request_size(int size) { _request_size = size; }
     void set_response_size(int size) { _response_size = size; }
     void set_async(bool async) { _async = async; }
-    
+
     void set_base_real_us(int64_t tm) { _base_real_us = tm; }
     void set_received_us(int64_t tm)
     { _received_real_us = tm + _base_real_us; }
@@ -115,7 +115,7 @@ public:
 
     Span* local_parent() const { return _local_parent; }
     static Span* tls_parent() {
-        return (Span*)bthread::tls_bls.rpcz_parent_span;
+        return static_cast<Span*>(pthread_getspecific(bthread::tls_span_key));
     }
 
     uint64_t trace_id() const { return _trace_id; }
@@ -138,7 +138,7 @@ public:
     bool async() const { return _async; }
     const std::string& full_method_name() const { return _full_method_name; }
     const std::string& info() const { return _info; }
-    
+
 private:
     DISALLOW_COPY_AND_ASSIGN(Span);
 
@@ -148,9 +148,8 @@ private:
     bvar::CollectorPreprocessor* preprocessor();
 
     void EndAsParent() {
-        if (this == (Span*)bthread::tls_bls.rpcz_parent_span) {
-            bthread::tls_bls.rpcz_parent_span = NULL;
-        }
+        if (this == static_cast<Span*>(pthread_getspecific(bthread::tls_span_key)))
+            pthread_setspecific(bthread::tls_span_key, nullptr);
     }
 
     uint64_t _trace_id;
@@ -173,7 +172,7 @@ private:
     int64_t _start_send_real_us;
     int64_t _sent_real_us;
     std::string _full_method_name;
-    // Format: 
+    // Format:
     //   time1_us \s annotation1 <SEP>
     //   time2_us \s annotation2 <SEP>
     //   ...

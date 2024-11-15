@@ -42,7 +42,8 @@ class KeyTable;
 
 // defined in task_group.cpp
 extern __thread TaskGroup* tls_task_group;
-extern __thread LocalStorage tls_bls;
+extern pthread_key_t tls_keytable_key;
+extern pthread_key_t tls_data_key;
 static __thread bool tls_ever_created_keytable = false;
 
 // We keep thread specific data in a two-level array. The top-level array
@@ -269,7 +270,7 @@ static void cleanup_pthread(void* arg) {
     if (kt) {
         delete kt;
         // After deletion: tls may be set during deletion.
-        tls_bls.keytable = NULL;
+        pthread_setspecific(bthread::tls_keytable_key, nullptr);
     }
 }
 
@@ -329,20 +330,20 @@ int bthread_keytable_pool_destroy(bthread_keytable_pool_t* pool) {
     }
     // Cheat get/setspecific and destroy the keytables.
     bthread::TaskGroup* const g = bthread::tls_task_group;
-    bthread::KeyTable* old_kt = bthread::tls_bls.keytable;
+    bthread::KeyTable* old_kt = static_cast<bthread::KeyTable*>(pthread_getspecific(bthread::tls_keytable_key));
     while (saved_free_keytables) {
         bthread::KeyTable* kt = saved_free_keytables;
         saved_free_keytables = kt->next;
-        bthread::tls_bls.keytable = kt;
+        pthread_setspecific(bthread::tls_keytable_key, kt);
         if (g) {
             g->current_task()->local_storage.keytable = kt;
         }
         delete kt;
         if (old_kt == kt) {
-            old_kt = NULL;
+            old_kt = nullptr;
         }
     }
-    bthread::tls_bls.keytable = old_kt;
+    pthread_setspecific(bthread::tls_keytable_key, old_kt);
     if (g) {
         g->current_task()->local_storage.keytable = old_kt;
     }
@@ -464,13 +465,13 @@ int bthread_key_delete(bthread_key_t key) {
 //  -> bthread_setspecific succeeds to borrow_keytable and overwrites old data
 //     at the position with newly created data, the old data is leaked.
 int bthread_setspecific(bthread_key_t key, void* data) {
-    bthread::KeyTable* kt = bthread::tls_bls.keytable;
+    bthread::KeyTable* kt = static_cast<bthread::KeyTable*>(pthread_getspecific(bthread::tls_keytable_key));
     if (NULL == kt) {
         kt = new (std::nothrow) bthread::KeyTable;
         if (NULL == kt) {
             return ENOMEM;
         }
-        bthread::tls_bls.keytable = kt;
+        pthread_setspecific(bthread::tls_keytable_key, kt);
         bthread::TaskGroup* const g = bthread::tls_task_group;
         if (g) {
             g->current_task()->local_storage.keytable = kt;
@@ -488,7 +489,7 @@ int bthread_setspecific(bthread_key_t key, void* data) {
 }
 
 void* bthread_getspecific(bthread_key_t key) {
-    bthread::KeyTable* kt = bthread::tls_bls.keytable;
+    bthread::KeyTable* kt = static_cast<bthread::KeyTable*>(pthread_getspecific(bthread::tls_keytable_key));
     if (kt) {
         return kt->get_data(key);
     }
@@ -498,7 +499,7 @@ void* bthread_getspecific(bthread_key_t key) {
         kt = bthread::borrow_keytable(task->attr.keytable_pool);
         if (kt) {
             g->current_task()->local_storage.keytable = kt;
-            bthread::tls_bls.keytable = kt;
+            pthread_setspecific(bthread::tls_keytable_key, kt);
             return kt->get_data(key);
         }
     }
@@ -506,11 +507,11 @@ void* bthread_getspecific(bthread_key_t key) {
 }
 
 void bthread_assign_data(void* data) {
-    bthread::tls_bls.assigned_data = data;
+    pthread_setspecific(bthread::tls_data_key, data);
 }
 
 void* bthread_get_assigned_data() {
-    return bthread::tls_bls.assigned_data;
+    return pthread_getspecific(bthread::tls_data_key);
 }
 
 }  // extern "C"
