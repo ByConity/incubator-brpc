@@ -30,9 +30,7 @@
 #include "butil/logging.h"                      // CHECK
 #endif
 
-#if defined(THREAD_SANITIZER)
 #define BRPC_USE_PTHREAD_ONLY
-#endif
 
 #ifdef BRPC_USE_PTHREAD_ONLY
 typedef pthread_t bthread_t;

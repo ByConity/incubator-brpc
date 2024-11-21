@@ -19,9 +19,7 @@
 
 // Date: Tue Jul 10 17:40:58 CST 2012
 
-#if defined(THREAD_SANITIZER)
 #include <csignal>
-#endif
 #include <time.h>
 #include <gflags/gflags.h>
 #include "butil/macros.h"                       // BAIDU_CASSERT
